@@ -1,8 +1,7 @@
 # Quest
-ICL System 25 text adventure game
+## ICL System 25 text adventure game
 
-
-The program is driven by the database, ADATA. This is a text file with
+The program is driven by the database, **ADATA**. This is a text file with
 fixed-length records, each 100 bytes long (plus 2 extra for CR and LF).
 
 Note: 
