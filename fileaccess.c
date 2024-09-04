@@ -220,9 +220,9 @@ void LoadMove(char *in,MOVE *m)
 /*   Load a key into a KEY structure */
 void LoadKey(char *in, KEY *k)
 {
-   LoadText(in,k->k_word[0],4);
-   LoadText(in+4,k->k_word[1],4);
-   LoadAction(in+8,&k->k_action);
+   LoadText(in,k->key_word[0],4);
+   LoadText(in+4,k->key_word[1],4);
+   LoadAction(in+8,&k->key_action);
 }
 
 /* Format data for place record */
@@ -231,9 +231,9 @@ int SetPlaceRecord(void *p, char *inbuff)
    REC_PLACE *r = (REC_PLACE *) p;
    int   i;
 
-   r->p_ld  = RECNUM(inbuff);
-   r->p_sd  = RECNUM(inbuff+4);
-   r->p_cs  = NUM(inbuff+8);
+   r->p_longdesc  = RECNUM(inbuff);
+   r->p_shortdesc  = RECNUM(inbuff+4);
+   r->p_state  = NUM(inbuff+8);
    r->p_s1d = RECNUM(inbuff+9);
    r->p_s2d = RECNUM(inbuff+13);
    r->p_s1a = RECNUM(inbuff+17);
@@ -241,7 +241,7 @@ int SetPlaceRecord(void *p, char *inbuff)
    LoadText(inbuff+25,r->p_k1,4);
    LoadText(inbuff+29,r->p_k2,4);
    for (i=0; i<8; i++)
-      LoadMove(inbuff+33+i*8,&r->p_mvs[i]);
+      LoadMove(inbuff+33+i*8,&r->p_move[i]);
    return(RT_PLACE);
 }
 
@@ -251,9 +251,9 @@ int SetArtefactRecord(void *p, char *inbuff)
    REC_ARTEFACT   *r   = (REC_ARTEFACT *) p;
    int   i;
 
-   r->a_nex = RECNUM(inbuff);
-   r->a_sd  = RECNUM(inbuff+4);
-   r->a_cs  = *(inbuff+8);
+   r->a_next = RECNUM(inbuff);
+   r->a_shortdesc  = RECNUM(inbuff+4);
+   r->a_state  = *(inbuff+8);
    r->a_s1d = RECNUM(inbuff+9);
    r->a_s2d = RECNUM(inbuff+13);
    r->a_s1a = RECNUM(inbuff+17);
@@ -261,7 +261,7 @@ int SetArtefactRecord(void *p, char *inbuff)
    LoadText(inbuff+25,r->a_k1,4);
    LoadText(inbuff+29,r->a_k2,4);
    for (i=0; i<4; i++)
-      LoadMove(inbuff+33+i*8,&r->a_mvs[i]);
+      LoadMove(inbuff+33+i*8,&r->a_move[i]);
    LoadText(inbuff+66,r->a_ak1,4);
    LoadText(inbuff+70,r->a_ak2,4);
    LoadText(inbuff+74,r->a_ak3,4);
@@ -347,10 +347,10 @@ int SetStateRecord(void *p, char *inbuff)
 
    for (i=0; i<18; i++)
    {
-      r->s_ini[i].s_rec = RECNUM(inbuff+i*5);
-      r->s_ini[i].s_st  = NUM(inbuff+4+i*5);
+      r->s_set[i].set_recnum = RECNUM(inbuff+i*5);
+      r->s_set[i].set_state  = NUM(inbuff+4+i*5);
    }
-   LoadAction(inbuff+90,&r->s_act);
+   LoadAction(inbuff+90,&r->s_action);
    return(RT_STATE);
 }
 
