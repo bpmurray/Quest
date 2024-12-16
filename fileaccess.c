@@ -220,9 +220,9 @@ void LoadMove(char *in,MOVE *m)
 /*   Load a key into a KEY structure */
 void LoadKey(char *in, KEY *k)
 {
-   LoadText(in,k->k_word[0],4);
-   LoadText(in+4,k->k_word[1],4);
-   LoadAction(in+8,&k->k_action);
+   LoadText(in,k->key_word[0],4);
+   LoadText(in+4,k->key_word[1],4);
+   LoadAction(in+8,&k->key_action);
 }
 
 /* Format data for place record */
@@ -283,9 +283,9 @@ int SetGremlinRecord(void *p, char *inbuff)
    REC_GREMLIN   *r   = (REC_GREMLIN *) p;
    int   i;
 
-   r->g_nex = RECNUM(inbuff);
-   r->g_sd  = RECNUM(inbuff+4);
-   r->g_cs  = *(inbuff+8);
+   r->g_next = RECNUM(inbuff);
+   r->g_shortdesc  = RECNUM(inbuff+4);
+   r->g_state  = *(inbuff+8);
    r->g_s1d = RECNUM(inbuff+9);
    r->g_s2d = RECNUM(inbuff+13);
    r->g_s1a = RECNUM(inbuff+17);
@@ -301,8 +301,8 @@ int SetGremlinRecord(void *p, char *inbuff)
    r->g_s2s =   NUM2(inbuff+83);
    r->g_th  =   RECNUM(inbuff+85);
    r->g_num =   NUM2(inbuff+90);
-   r->g_loc =   RECNUM(inbuff+92);
-   r->g_ldm =   NUM(inbuff+98);
+   r->g_start =   RECNUM(inbuff+92);
+   r->g_lockdown =   NUM(inbuff+98);
    return(RT_GREMLIN);
 }
 
@@ -312,18 +312,18 @@ int SetConditionRecord(void *p, char *inbuff)
    REC_CONDITION   *r   = (REC_CONDITION *) p;
    int   i;
 
-   LoadAction(inbuff,&r->i_sr);
-   LoadAction(inbuff+5,&r->i_fr);
-   r->i_sm  = RECNUM(inbuff+10);
-   r->i_fm  = RECNUM(inbuff+14);
-   r->i_cf  = *(inbuff+18);
+   LoadAction(inbuff,&r->i_successtxt);
+   LoadAction(inbuff+5,&r->i_failuretxt);
+   r->i_successtxt  = RECNUM(inbuff+10);
+   r->i_failuretxt  = RECNUM(inbuff+14);
+   r->i_flag  = *(inbuff+18);
    for (i=0; i<6; i++)
    {
-      r->i_ma[i]   = NUM2(inbuff+19+2*i);
-      r->i_fa[i]   = NUM2(inbuff+31+2*i);
+      r->i_mandatory[i]   = NUM2(inbuff+19+2*i);
+      r->i_forbidden[i]   = NUM2(inbuff+31+2*i);
    }
-   strncpy(r->i_rs,inbuff+32,5);
-   r->i_pro =   NUM(inbuff+37);
+   strncpy(r->i_state,inbuff+32,5);
+   r->i_probability =   NUM(inbuff+37);
    return(RT_CONDITION);
 }
 
@@ -347,10 +347,10 @@ int SetStateRecord(void *p, char *inbuff)
 
    for (i=0; i<18; i++)
    {
-      r->s_ini[i].s_rec = RECNUM(inbuff+i*5);
-      r->s_ini[i].s_st  = NUM(inbuff+4+i*5);
+      r->s_set[i].set_recnum = RECNUM(inbuff+i*5);
+      r->s_set[i].set_state  = NUM(inbuff+4+i*5);
    }
-   LoadAction(inbuff+90,&r->s_act);
+   LoadAction(inbuff+90,&r->s_action);
    return(RT_STATE);
 }
 
