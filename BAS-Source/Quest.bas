@@ -1,0 +1,1812 @@
+' ================================================================
+' QUEST ADVENTURE GAME - Reorganized and Documented
+' ================================================================
+' A text-based adventure game with rooms, artifacts, and creatures
+' Spaghetti original converted to structured, readable format
+' GOTO statements removed and replaced with structured logic
+' ================================================================
+
+Type GameRecord
+    DataRecord As String * 100
+    'CRLF As String * 2 ' To allow for CR+LF
+End Type
+
+' File handling variables
+Dim Shared GameRec As GameRecord
+Dim Shared RecordNumber As Integer
+
+' Declare all variables explicitly
+Dim Shared NewPlace As Integer
+Dim Shared ParsedNumber As Integer
+Dim Shared ProcessedWord As String
+Dim Shared CommandArgs As String
+Dim Shared ParsedText1 As String
+Dim Shared ParsedText2 As String
+Dim Shared TextContinue As String
+Dim Shared UserInput As String
+Dim Shared UserFileName As String
+Dim Shared UserResponse As String
+Dim Shared GremlinData As String
+Dim Shared TargetGremlin As Integer
+Dim Shared FoundTarget As Integer
+Dim Shared GremlinIndex As Integer
+Dim Shared ArtifactIndex As Integer
+Dim Shared Index As Integer
+Dim Shared CheckIndex As Integer
+Dim Shared ActionIndex As Integer
+Dim Shared ProcessIndex As Integer
+'Dim Shared ItemIndex As Integer ' UNUSED
+'Dim Shared SearchIndex As Integer ' UNUSED
+'Dim Shared ListOffset As Integer ' UNUSED
+Dim Shared OptimalMove As Integer
+
+' Game state variables
+Dim Shared CurrentRoom As Integer ' SI% - Current player location
+Dim Shared HomeRoom As Integer ' HO% - Starting/home room
+Dim Shared WarehouseRoom As Integer ' WR% - Warehouse room
+Dim Shared DarkRoom As Integer ' DK% - Dark room
+Dim Shared MoveCount As Integer ' MV% - Number of moves made
+Dim Shared CarryCount As Integer ' CC% - Items currently carried
+Dim Shared PlayerState As Integer ' PS% - Player's current state
+Dim Shared Score As Double ' SC - Current game score
+Dim Shared PenaltyPoints As Integer ' PN% - Penalty points
+Dim Shared RandomSeed As Integer ' RN% - Random number seed
+
+' Game arrays
+Dim Shared ArtifactLocation(60) As Integer ' AL% - Where each artifact is located
+Dim Shared ArtifactRecord(60) As Integer ' AR% - Record number for each artifact
+Dim Shared GremlinLocation(40) As Integer ' GL% - Where each gremlin is located
+Dim Shared GremlinRecord(40) As Integer ' GR% - Record number for each gremlin
+Dim Shared GremlinFactor(40) As Integer ' GF% - Gremlin behavior factor
+Dim Shared LocationList(5) As Integer ' LL% - Location history list
+Dim Shared RecentPlaces(5) As Integer ' RP% - Recently visited places
+
+' Game control variables
+Dim Shared NumArtifacts As Integer ' NA% - Total number of artifacts
+Dim Shared NumGremlins As Integer ' NG% - Total number of gremlins
+Dim Shared CurrentRecord As Integer ' R% - Current record being processed
+Dim Shared FlagRecord As Integer ' FG% - Flag record number
+Dim Shared ActionResult As String ' AR$ - Action result flag
+Dim Shared SecondaryAction As String ' A2$ - Secondary action to execute
+Dim Shared RecordContent As String ' RC$ - Content of current record
+Dim Shared PlaceRecord As String ' PL$ - Current place record
+'Dim Shared DataBuffer As String ' ZZ$ - Data buffer for file operations ' UNUSED
+
+' Text processing variables
+Dim Shared Word1 As String ' W1$ - First word of command
+Dim Shared Word2 As String ' W2$ - Second word of command
+Dim Shared CurCommand As String ' Needs to be defined for STRICT
+Dim Shared Action As String ' AC$ - Current action being processed
+Dim Shared OutputBuffer As String ' OB$ - Text output buffer
+Dim Shared TextOutput As String ' TX$ - Text to output
+
+' ----------------------------------------------------------------
+' MAIN PROGRAM INITIALIZATION
+' ----------------------------------------------------------------
+Main:
+Randomize Timer
+Call InitializeGame
+Call LoadGameData
+
+GameLoop:
+Call ValidateGameState
+ActionResult = "Y"
+Call ArriveAtLocation
+Call StartGameLoop
+End
+
+' ----------------------------------------------------------------
+' GAME INITIALIZATION ROUTINES
+' ----------------------------------------------------------------
+Sub InitializeGame
+    Open "QDATA.dat" For Random As #1 Len = Len(GameRec)
+    'Open "ADATA" For Random As #1 Len = Len(GameRec)
+    RandomSeed = 1
+    CarryCount = 0
+    SecondaryAction = "0"
+    MoveCount = 100
+    PenaltyPoints = 0
+    ActionResult = "N"
+    OutputBuffer = ""
+End Sub
+
+Sub LoadGameData
+    CurrentRecord = 0
+    Call GetRecord
+
+    CurrentRoom = Val(Mid$(RecordContent, 21, 4))
+    HomeRoom = Val(Mid$(RecordContent, 25, 4))
+    WarehouseRoom = Val(Mid$(RecordContent, 29, 4))
+    DarkRoom = Val(Mid$(RecordContent, 33, 4))
+    CurrentRecord = Val(Mid$(RecordContent, 11, 4))
+    FlagRecord = Val(Mid$(RecordContent, 17, 4))
+    NumArtifacts = Val(Mid$(RecordContent, 9, 2))
+    NumGremlins = Val(Mid$(RecordContent, 15, 2))
+
+    Call LoadArtifacts
+    Call LoadGremlins
+End Sub
+
+Sub LoadArtifacts
+    CurrentRecord = FlagRecord
+    Do
+        Call GetRecord
+        Dim idxA As Integer
+        idxA = Val(Mid$(RecordContent, 91, 2))
+        If idxA >= 1 And idxA <= 60 Then
+            ArtifactLocation(idxA) = Val(Mid$(RecordContent, 93, 4))
+            ArtifactRecord(idxA) = CurrentRecord
+        End If
+        CurrentRecord = Val(Left$(RecordContent, 4))
+    Loop While CurrentRecord > 0
+End Sub
+
+Sub LoadGremlins
+    CurrentRecord = FlagRecord
+    Do
+        Call GetRecord
+        Dim idxG As Integer
+        idxG = Val(Mid$(RecordContent, 91, 2))
+        If idxG >= 1 And idxG <= 40 Then
+            GremlinLocation(idxG) = Val(Mid$(RecordContent, 93, 4))
+            GremlinRecord(idxG) = CurrentRecord
+            GremlinFactor(idxG) = Val(Mid$(RecordContent, 81, 1))
+        End If
+        CurrentRecord = Val(Left$(RecordContent, 4))
+    Loop While CurrentRecord > 0
+End Sub
+
+' ----------------------------------------------------------------
+' MAIN GAME LOOP
+' ----------------------------------------------------------------
+Sub StartGameLoop
+    ActionResult = "N"
+    Do
+        If ActionResult = "Y" Then
+            Call ProcessMovement
+        Else
+            Call ProcessGremlins
+        End If
+
+        Call ArriveAtLocation
+
+        If ActionResult <> "Y" Then
+            Call CheckGremlinAttacks
+        End If
+
+        Call ProcessLocationDescription
+        Call GetPlayerInput
+        Call ProcessCommand
+
+    Loop
+End Sub
+
+' ----------------------------------------------------------------
+' MOVEMENT AND LOCATION PROCESSING
+' ----------------------------------------------------------------
+Sub ProcessMovement
+    ActionResult = "Y"
+    Dim TempString As String
+    Dim FollowString As String
+
+    TempString = "The"
+    FollowString = "X"
+
+    For GremlinIndex = 1 To NumGremlins
+        If GremlinLocation(GremlinIndex) = CurrentRoom Then
+            CurrentRecord = GremlinRecord(GremlinIndex)
+            Call GetRecord
+
+            Dim StateValue As Integer
+            StateValue = Val(Mid$(RecordContent, 9, 1))
+
+            If Val(Mid$(RecordContent, 80 + 2 * StateValue, 1)) > Rnd * 9 Then
+                ' Gremlin follows
+                TextOutput = TempString
+                Call ProcessTextOutput
+
+                If TempString = "The" Then
+                    FollowString = "%4has"
+                Else
+                    FollowString = "%4have"
+                End If
+
+                TempString = "%4and"
+                Call ProcessDescription
+
+                GremlinLocation(GremlinIndex) = -NewPlace
+            End If
+        End If
+    Next GremlinIndex
+
+    CurrentRoom = NewPlace
+
+    If FollowString <> "X" Then
+        TextOutput = FollowString + " following you. "
+        Call ProcessTextOutput
+        ActionResult = "N"
+    End If
+End Sub
+
+Sub ArriveAtLocation
+    CurrentRecord = CurrentRoom
+    Call GetRecord
+    PlaceRecord = RecordContent
+    CurrentRecord = Val(Left$(PlaceRecord, 4))
+
+    ' Update location history: shift RecentPlaces left, append current
+    Dim i As Integer
+    For i = 1 To 4
+        RecentPlaces(i) = RecentPlaces(i + 1)
+    Next i
+    RecentPlaces(5) = CurrentRoom
+
+    Call ProcessLocationDescription
+
+    PlayerState = Val(Mid$(PlaceRecord, 9, 1))
+    CurrentRecord = Val(Mid$(PlaceRecord, 6 + 4 * PlayerState, 4))
+    Call ProcessLocationDescription
+
+    Call ProcessArtifactsAtLocation
+    Call ProcessGremlinsAtLocation
+End Sub
+
+' ----------------------------------------------------------------
+' COMMAND PROCESSING
+' ----------------------------------------------------------------
+Sub GetPlayerInput
+    Call FlushOutput
+    Call CalculateScore
+
+    Print Score; "  :";
+    Line Input UserInput
+
+    RandomSeed = Len(UserInput)
+    MoveCount = MoveCount + 1
+
+    Call ParseCommand(UserInput)
+End Sub
+
+Sub ParseCommand (InputString As String)
+    ' Extract first word
+    Call ExtractWord(InputString)
+    Word1 = ProcessedWord
+
+    If Len(Word1) = 0 Then
+        Word1 = "*   "
+    Else
+        Word1 = Left$(Word1 + "   ", 4)
+    End If
+
+    Call ExtractWord(InputString)
+    Word2 = ProcessedWord
+
+    If Len(Word2) = 0 Then
+        Word2 = "*   "
+    Else
+        Word2 = Left$(Word2 + "   ", 4)
+    End If
+
+    Call ConvertToUppercase(Word1)
+    Call ConvertToUppercase(Word2)
+
+    If Word1 = "SAVE" And Word2 = "*   " Then
+        Call SaveGame
+        Exit Sub
+    End If
+    If Word1 = "LOAD" And Word2 = "*   " Then
+        Call LoadGame
+        Exit Sub
+    End If
+    If Word1 = "ZPQR" Then
+        Call HandleDebugCommand
+        Exit Sub
+    End If
+End Sub
+
+Sub ProcessCommand
+    CurCommand = "?"
+    Action = "?"
+
+    Call CheckMovementCommands
+    If CurCommand <> "?" Then
+        Call HandleMovement
+        Exit Sub
+    End If
+
+    Call CheckKeywordInteractions
+    If Action <> "?" Then
+        Call ExecuteAction
+        Exit Sub
+    End If
+
+    Call CheckStandardCommands
+    If Action <> "?" Then
+        Call ExecuteAction
+        Exit Sub
+    End If
+
+    CurrentRecord = 344
+    Call DisplayMessage
+End Sub
+
+' ----------------------------------------------------------------
+' MOVEMENT HANDLING
+' ----------------------------------------------------------------
+Sub CheckMovementCommands
+    Dim DirectionString As String
+    DirectionString = "NORTSOUTEASTWESTUP  DOWN" + Mid$(PlaceRecord, 26, 8)
+
+    Dim idx As Integer
+    For idx = 1 To 29 Step 4
+        If Word1 = Mid$(DirectionString, idx, 4) Then
+            ' POSSIBLE FIX: compute proper code: original used strange formula; emulate two-digit code
+            'CurCommand = "C" + Right$(Str$((idx + 3) \ 4), 2)
+            CurCommand = "C" + Right$(Str$((Index + 3) / 400), 2)
+            Exit For
+        End If
+    Next idx
+End Sub
+
+Sub HandleMovement
+    Action = "?"
+    RecordContent = PlaceRecord
+    Call FindActionInRecord
+
+    If Action <> "?" Then
+        Call ExecuteAction
+    Else
+        CurrentRecord = 343
+        Call DisplayMessage
+    End If
+End Sub
+
+' ----------------------------------------------------------------
+' GAME UTILITIES
+' ----------------------------------------------------------------
+Sub GetRecord
+    RecordNumber = CurrentRecord + 1
+    If RecordNumber < 0 Then RecordNumber = 0 ' FIX: guard against negative
+    Get #1, RecordNumber, GameRec
+    RecordContent = GameRec.DataRecord
+    print RecordContent
+End Sub
+
+Sub DisplayMessage
+    If CurrentRecord = 0 Then Exit Sub
+
+    Call GetRecord
+    Call ParseTextTokens
+
+    TextOutput = ParsedText1
+    Call ProcessTextOutput
+
+    If TextContinue = "1" Then Exit Sub
+
+    TextOutput = ParsedText2
+    Call ProcessTextOutput
+
+    If TextContinue = "3" Then
+        CurrentRecord = CurrentRecord + 1
+        Call DisplayMessage
+    End If
+End Sub
+
+Sub CalculateScore
+    Score = 0
+
+    For ArtifactIndex = 1 To NumArtifacts
+        If ArtifactLocation(ArtifactIndex) <> HomeRoom Then
+            ' skip
+        Else
+            CurrentRecord = ArtifactRecord(ArtifactIndex)
+            Call GetRecord
+            Dim StateValue As Integer
+            StateValue = Val(Mid$(RecordContent, 9, 1))
+            If Mid$(RecordContent, 80 + StateValue + StateValue, 1) = "2" Then
+                Score = Score + Val(Mid$(RecordContent, 79, 3))
+            End If
+        End If
+    Next ArtifactIndex
+
+    If MoveCount = 0 Then MoveCount = 1 ' FIX: protect from divide-by-zero
+    Score = Int(1000 * (10 * Score - PenaltyPoints) / MoveCount) / 100
+End Sub
+
+' ----------------------------------------------------------------
+' SAVE/LOAD FUNCTIONALITY
+' ----------------------------------------------------------------
+Sub SaveGame
+    Print "FILE NAME PLEASE  :";
+    Input UserFileName
+
+    Open UserFileName For Output As #3
+    Print #3, CurrentRoom, Score, MoveCount, PenaltyPoints, CarryCount, RandomSeed
+
+    For Index = 1 To 60
+        Print #3, ArtifactLocation(Index), ArtifactRecord(Index)
+    Next Index
+
+    For Index = 1 To 40
+        Print #3, GremlinLocation(Index), GremlinRecord(Index), GremlinFactor(Index)
+    Next Index
+
+    For Index = 1 To 5
+        Print #3, LocationList(Index), RecentPlaces(Index)
+    Next Index
+
+    Close #3
+    Call ArriveAtLocation ' Return to game
+End Sub
+
+Sub LoadGame
+    Print "FILE NAME PLEASE  :";
+    Input UserFileName
+
+    Open UserFileName For Input As #3
+    Input #3, CurrentRoom, Score, MoveCount, PenaltyPoints, CarryCount, RandomSeed
+
+    For Index = 1 To 60
+        Input #3, ArtifactLocation(Index), ArtifactRecord(Index)
+    Next Index
+
+    For Index = 1 To 40
+        Input #3, GremlinLocation(Index), GremlinRecord(Index), GremlinFactor(Index)
+    Next Index
+
+    For Index = 1 To 5
+        Input #3, LocationList(Index), RecentPlaces(Index)
+    Next Index
+
+    Close #3
+    Call ArriveAtLocation ' Return to game
+End Sub
+
+' ----------------------------------------------------------------
+' TEXT PROCESSING UTILITIES
+' ----------------------------------------------------------------
+Sub ExtractWord (InputString As String)
+    ' Remove leading spaces
+    Do While Len(InputString) > 0 And Left$(InputString, 1) = " "
+        InputString = Mid$(InputString, 2)
+    Loop
+
+    ' Find next space
+    Dim SpacePosition As Integer
+    SpacePosition = InStr(InputString, " ")
+    If SpacePosition = 0 Then SpacePosition = Len(InputString) + 1
+
+    ' Extract word
+    If SpacePosition > 1 Then
+        ProcessedWord = Left$(InputString, SpacePosition - 1)
+    Else
+        ProcessedWord = ""
+    End If
+
+    If SpacePosition <= Len(InputString) Then
+        InputString = Mid$(InputString, SpacePosition + 1)
+    Else
+        InputString = ""
+    End If
+End Sub
+
+Sub ConvertToUppercase (WordString As String)
+    ' WordString is expected fixed-length (4)
+    Dim i As Integer
+    For i = 1 To 4
+        If Mid$(WordString, i, 1) > "@" Then
+            Mid$(WordString, i, 1) = Chr$(Asc(Mid$(WordString, i, 1)) And &H5F)
+        End If
+    Next i
+End Sub
+
+Sub ProcessTextOutput
+    ' Handle text formatting and output
+    If Len(TextOutput) = 0 Then Exit Sub
+
+    ' Ensure a trailing space where appropriate
+    If Right$(TextOutput, 1) = "." Then TextOutput = TextOutput + " "
+
+    Dim Remaining As String
+    Remaining = TextOutput
+
+    Do While Len(Remaining) > 0
+        Dim PercentPos As Integer
+        PercentPos = InStr(Remaining, "%")
+        If PercentPos = 0 Then PercentPos = Len(Remaining) + 1
+
+        OutputBuffer = OutputBuffer + Left$(Remaining, PercentPos - 1) + " "
+        If Len(OutputBuffer) > 70 Then Call WrapText
+
+        If PercentPos > Len(Remaining) Then
+            Exit Do
+        End If
+
+        Dim codeChar As String
+        codeChar = Mid$(Remaining, PercentPos + 1, 1)
+        Select Case Val(codeChar)
+            Case 1: Call FlushOutput
+            Case 2: OutputBuffer = OutputBuffer + "%"
+            Case 3
+                If Len(OutputBuffer) > 0 Then OutputBuffer = Left$(OutputBuffer, Len(OutputBuffer) - 1)
+            Case 4
+                If Len(OutputBuffer) >= 4 Then OutputBuffer = Left$(OutputBuffer, Len(OutputBuffer) - 4) + " "
+        End Select
+
+        Remaining = Mid$(Remaining, PercentPos + 2)
+    Loop
+End Sub
+
+Sub WrapText
+    Dim WrapPos As Integer
+    WrapPos = InStr(60, OutputBuffer, " ")
+    If WrapPos = 0 Then WrapPos = Len(OutputBuffer)
+
+    Print Left$(OutputBuffer, WrapPos)
+    OutputBuffer = Right$(OutputBuffer, Len(OutputBuffer) - WrapPos)
+
+    ' Remove leading space
+    Do While Len(OutputBuffer) > 0 And Left$(OutputBuffer, 1) = " "
+        OutputBuffer = Mid$(OutputBuffer, 2)
+    Loop
+End Sub
+
+Sub FlushOutput
+    If Len(OutputBuffer) > 0 Then Call WrapText
+    If Len(OutputBuffer) > 0 Then Print OutputBuffer: OutputBuffer = ""
+End Sub
+
+' ----------------------------------------------------------------
+' DEBUG AND UTILITY COMMANDS
+' ----------------------------------------------------------------
+Sub HandleDebugCommand
+    If Word2 = "ARTI" Then
+        For ArtifactIndex = 1 To NumArtifacts
+            ArtifactLocation(ArtifactIndex) = 0
+        Next ArtifactIndex
+        CarryCount = NumArtifacts
+    ElseIf Word2 = "GREM" Then
+        For GremlinIndex = 1 To NumGremlins
+            GremlinLocation(GremlinIndex) = -1 ' FIX: use -1 for removed gremlins
+        Next GremlinIndex
+    Else
+        CurrentRoom = Val(Word2)
+        ActionResult = "Y"
+    End If
+End Sub
+
+' ----------------------------------------------------------------
+' GREMLIN AI AND BEHAVIOR
+' ----------------------------------------------------------------
+Sub ProcessGremlins
+    Dim TargetGremlinLocal As Integer
+    TargetGremlinLocal = 0
+
+    For GremlinIndex = 1 To NumGremlins
+        If GremlinLocation(GremlinIndex) = CurrentRoom Then
+            GremlinFactor(GremlinIndex) = GremlinFactor(GremlinIndex) + 1
+            If Rnd * 10 <= GremlinFactor(GremlinIndex) Then
+                TargetGremlinLocal = GremlinIndex
+                GremlinFactor(GremlinIndex) = 9
+                Exit For
+            End If
+        End If
+    Next GremlinIndex
+
+    If TargetGremlinLocal = 0 Then Exit Sub
+
+    Call ProcessGremlinAction(TargetGremlinLocal)
+End Sub
+
+Sub ProcessGremlinAction (GIndex As Integer)
+    CurrentRecord = GremlinRecord(GIndex)
+    Call GetRecord
+
+    GremlinFactor(GIndex) = Val(Mid$(RecordContent, 86, 1))
+
+    Dim StateValue As Integer
+    StateValue = Val(Mid$(RecordContent, 9, 1))
+
+    CurrentRecord = Val(Mid$(RecordContent, 87, 4))
+    If CurrentRecord = 0 Then Exit Sub
+
+    Dim SuccessChance As Integer
+    SuccessChance = Val(Mid$(RecordContent, 81 + 2 * StateValue, 1))
+
+    Call GetRecord
+    ActionResult = "Y"
+
+    If Rnd * 9 < SuccessChance Then
+        Call ProcessSuccessfulCondition
+    Else
+        Call ProcessFailedCondition
+    End If
+End Sub
+
+Sub CheckGremlinAttacks
+    Dim OptimalMoveLocal As Integer
+    OptimalMoveLocal = 9999
+
+    For GremlinIndex = 1 To NumGremlins
+        If GremlinLocation(GremlinIndex) = CurrentRoom Then
+            CurrentRecord = GremlinRecord(GremlinIndex)
+            Call ProcessObjectInteraction
+        End If
+
+        ' Handle gremlins that were following (negative location)
+        If GremlinLocation(GremlinIndex) = -CurrentRoom Then
+            GremlinLocation(GremlinIndex) = CurrentRoom
+        End If
+    Next GremlinIndex
+End Sub
+
+' ----------------------------------------------------------------
+' OBJECT AND LOCATION PROCESSING
+' ----------------------------------------------------------------
+Sub ProcessArtifactsAtLocation
+    Dim OptimalMoveLocal As Integer
+    OptimalMoveLocal = 9999
+
+    For ArtifactIndex = 1 To NumArtifacts
+        If ArtifactLocation(ArtifactIndex) = CurrentRoom Or ArtifactLocation(ArtifactIndex) = 0 Then
+            CurrentRecord = ArtifactRecord(ArtifactIndex)
+            Call ProcessObjectInteraction
+        End If
+    Next ArtifactIndex
+End Sub
+
+Sub ProcessGremlinsAtLocation
+    For GremlinIndex = 1 To NumGremlins
+        If GremlinLocation(GremlinIndex) = CurrentRoom Then
+            CurrentRecord = GremlinRecord(GremlinIndex)
+            Call ProcessObjectInteraction
+        End If
+    Next GremlinIndex
+End Sub
+
+Sub ProcessObjectInteraction
+    Call GetRecord
+    Dim NameRecord As Integer
+    NameRecord = Val(Mid$(RecordContent, 6 + 4 * Val(Mid$(RecordContent, 9, 1)), 4))
+
+    CurrentRecord = Val(Mid$(RecordContent, 5, 4))
+    If CurrentRecord = 0 Then
+        ' Display name directly
+        OptimalMove = CurrentRecord
+        CurrentRecord = NameRecord
+        Call DisplayMessage
+        Exit Sub
+    End If
+
+    If CurrentRecord = OptimalMove Then
+        TextOutput = "%4and a"
+        Call ProcessTextOutput
+    Else
+        Call DisplayMessage
+    End If
+
+    OptimalMove = CurrentRecord
+    CurrentRecord = NameRecord
+    Call DisplayMessage
+End Sub
+
+' ----------------------------------------------------------------
+' COMMAND PROCESSING IMPLEMENTATIONS
+' ----------------------------------------------------------------
+Sub CheckKeywordInteractions
+    If Mid$(PlaceRecord, 26, 4) <> "* KR" Then
+        ' check gremlins' keywords only
+    Else
+        CurrentRecord = Val(Mid$(PlaceRecord, 30, 4))
+        Call FindActionInRecord
+        If Action <> "?" Then Exit Sub
+    End If
+
+    For GremlinIndex = NumGremlins To 1 Step -1
+        If GremlinLocation(GremlinIndex) <> CurrentRoom Then
+            ' nothing
+        Else
+            CurrentRecord = GremlinRecord(GremlinIndex)
+            Call GetRecord
+            If Mid$(RecordContent, 26, 4) = "* KR" Then
+                CurrentRecord = Val(Mid$(RecordContent, 30, 4))
+                Call FindActionInRecord
+                If Action <> "?" Then Exit Sub
+            End If
+        End If
+    Next GremlinIndex
+End Sub
+
+Sub CheckStandardCommands
+    Dim CommandIndexLocal As Integer
+    CommandIndexLocal = 0
+
+    For CheckIndex = 1 To 25 Step 4
+        If Mid$("LOOKINVEFEEDSCOREND ATTAKILL", CheckIndex, 4) = Word1 Then
+            CommandIndexLocal = (CheckIndex + 3) \ 4
+            Exit For
+        End If
+    Next CheckIndex
+
+    Select Case CommandIndexLocal
+        Case 1: Call HandleLookCommand
+        Case 2: Call HandleInventoryCommand
+        Case 3: Call HandleFeedCommand
+        Case 4: Call HandleScoreCommand
+        Case 5: Call HandleEndCommand
+        Case 6: Call HandleAttackCommand
+        Case 7: Call HandleKillCommand
+        Case Else: Call CheckArtifactCommands
+    End Select
+End Sub
+
+Sub CheckArtifactCommands
+    Dim Found As Integer
+    Found = 0
+    For ArtifactIndex = 1 To NumArtifacts
+        If ArtifactLocation(ArtifactIndex) = CurrentRoom Or ArtifactLocation(ArtifactIndex) = 0 Then
+            CurrentRecord = ArtifactRecord(ArtifactIndex)
+            Call GetRecord
+
+            If Mid$(RecordContent, 26, 4) = "* KR" Then
+                CurrentRecord = Val(Mid$(RecordContent, 30, 4))
+                Call FindActionInRecord
+                If Action <> "?" Then
+                    Call HandleArtifactAction(ArtifactIndex)
+                    Found = 1
+                    Exit For
+                End If
+            End If
+
+            If Mid$(RecordContent, 26, 4) = Word2 Or Mid$(RecordContent, 30, 4) = Word2 Then
+                Call HandleSpecificArtifact(ArtifactIndex)
+                Found = 1
+                Exit For
+            End If
+        End If
+    Next ArtifactIndex
+
+    If Found = 0 Then
+        CurrentRecord = DarkRoom
+        Call FindActionInRecord
+    End If
+End Sub
+
+' ----------------------------------------------------------------
+' SPECIFIC COMMAND HANDLERS
+' ----------------------------------------------------------------
+Sub HandleLookCommand
+    CurrentRecord = Val(Left$(PlaceRecord, 4))
+    Call DisplayMessage
+End Sub
+
+Sub HandleInventoryCommand
+    CurrentRecord = 342
+    Call DisplayMessage
+
+    Dim ItemList As String
+    ItemList = "%1NOTHING%1"
+    Dim anyItem As Integer
+    anyItem = 0
+
+    For ArtifactIndex = 1 To NumArtifacts
+        If ArtifactLocation(ArtifactIndex) = 0 Then
+            TextOutput = "%1A "
+            Call ProcessTextOutput
+            CurrentRecord = ArtifactRecord(ArtifactIndex)
+            Call GetRecord
+            Call ProcessDescription
+            ItemList = " %1"
+            anyItem = 1
+        End If
+    Next ArtifactIndex
+
+    If anyItem = 0 Then
+        TextOutput = ItemList
+        Call ProcessTextOutput
+    End If
+End Sub
+
+Sub HandleFeedCommand
+    Word1 = "F"
+    Call HandleCreatureInteraction
+End Sub
+
+Sub HandleAttackCommand
+    Word1 = "A"
+    Call HandleCreatureInteraction
+End Sub
+
+Sub HandleKillCommand
+    Word1 = "K"
+    Call HandleCreatureInteraction
+End Sub
+
+Sub HandleCreatureInteraction
+    Dim TargetGremlinLocal As Integer
+    TargetGremlinLocal = 1
+    Dim found As Integer
+    found = 0
+
+    Do
+        If TargetGremlinLocal > NumGremlins Then Exit Do
+        If GremlinLocation(TargetGremlinLocal) <> CurrentRoom Then
+            TargetGremlinLocal = TargetGremlinLocal + 1
+        Else
+            CurrentRecord = GremlinRecord(TargetGremlinLocal)
+            Call GetRecord
+
+            If Word2 = Mid$(RecordContent, 26, 4) Or Word2 = Mid$(RecordContent, 30, 4) Then
+                found = 1
+                Exit Do
+            End If
+
+            TargetGremlinLocal = TargetGremlinLocal + 1
+        End If
+    Loop
+
+    If found = 0 Then
+        CurrentRecord = 339
+        Call DisplayMessage
+        Exit Sub
+    End If
+
+    CurCommand = Left$(Word1, 1) + Mid$(Str$((TargetGremlinLocal * 4) \ 100) + "0", 3, 2)
+    GremlinData = RecordContent
+    TargetGremlin = TargetGremlinLocal
+
+    Call ExecuteAction
+End Sub
+
+Sub HandleScoreCommand
+    Call FlushOutput
+    Print "SCORE:"; Score
+End Sub
+
+Sub HandleEndCommand
+    Call FlushOutput
+    Print "SCORE:"; Score
+    End
+End Sub
+
+' ----------------------------------------------------------------
+' ACTION EXECUTION ENGINE
+' ----------------------------------------------------------------
+Sub ExecuteAction
+    Dim ActionType As Integer
+    ActionType = Val(Left$(Action, 1)) + 1
+
+    Select Case ActionType
+        Case 1: Exit Sub
+        Case 2: Call ExecuteMessageAction
+        Case 3: Call ExecuteMoveAction
+        Case 4: Call ExecuteComplexAction
+        Case 5: Call ExecuteCarryAction
+        Case 6: Call ExecuteDropAction
+        Case 7: Call ExecutePlayerAction
+        Case 8: Call ExecuteStateAction
+        Case 9: Call ExecuteDestroyAction
+        Case 10: Call ExecuteComplexAction
+    End Select
+
+    If SecondaryAction <> "0" Then
+        Action = SecondaryAction
+        SecondaryAction = "0"
+        Call ExecuteAction
+    End If
+End Sub
+
+Sub ExecuteMessageAction
+    Dim MessageNumber As String
+    MessageNumber = Right$(Action, 4)
+
+    If Left$(MessageNumber, 2) = "??" Then
+        Call ProcessDynamicMessage
+    Else
+        CurrentRecord = Val(MessageNumber)
+        Call DisplayMessage
+    End If
+End Sub
+
+Sub ExecuteMoveAction
+    NewPlace = Val(Right$(Action, 4))
+    CurrentRecord = NewPlace
+    Call GetRecord
+
+    If Right$(RecordContent, 1) < "6" Then
+        Call ProcessMovement
+        Exit Sub
+    End If
+
+    If Right$(RecordContent, 1) > "6" Then
+        Call ProcessComplexMovement
+        Exit Sub
+    End If
+
+    Call ProcessConditionalMovement
+End Sub
+
+' ----------------------------------------------------------------
+' CONDITION AND STATE MANAGEMENT
+' ----------------------------------------------------------------
+Sub ProcessConditionalMovement
+    Dim ConditionType As Integer
+    ConditionType = Val(Mid$(RecordContent, 19, 1))
+
+    Select Case ConditionType
+        Case 1, 2: Call CheckPlayerState
+        Case 3: Call ProcessSuccessfulCondition
+        Case 4: Call ProcessFailedCondition
+        Case 5: Call ProcessBothConditions
+    End Select
+End Sub
+
+Sub CheckPlayerState
+    Dim RequiredState As Integer
+    RequiredState = Val(Mid$(RecordContent, 19, 1))
+
+    If RequiredState <> PlayerState Then
+        Call ProcessFailedCondition
+    Else
+        Call ProcessMandatoryItems
+    End If
+End Sub
+
+Sub ProcessMandatoryItems
+    Dim ListOffsetLocal As Integer
+    ListOffsetLocal = 0
+
+    Do While ListOffsetLocal < 10
+        Dim ItemNumber As String
+        ItemNumber = Mid$(RecordContent, ListOffsetLocal + 20, 2)
+        Call ParseItemNumber(ItemNumber)
+
+        If ParsedNumber < 0 Then
+            ' Check gremlin presence
+            If GremlinLocation(-ParsedNumber) <> CurrentRoom Then
+                Call ProcessFailedCondition
+                Exit Sub
+            End If
+        ElseIf ParsedNumber > 0 Then
+            ' Check artifact possession (ParsedNumber positive => should be carried)
+            If ArtifactLocation(ParsedNumber) <> 0 Then
+                Call ProcessFailedCondition
+                Exit Sub
+            End If
+        End If
+
+        ItemNumber = Mid$(RecordContent, ListOffsetLocal + 32, 2)
+        Call ParseItemNumber(ItemNumber)
+
+        If ParsedNumber < 0 Then
+            If GremlinLocation(-ParsedNumber) = CurrentRoom Then
+                Call ProcessFailedCondition
+                Exit Sub
+            End If
+        ElseIf ParsedNumber > 0 Then
+            If ArtifactLocation(ParsedNumber) = 0 Then
+                Call ProcessFailedCondition
+                Exit Sub
+            End If
+        End If
+
+        ListOffsetLocal = ListOffsetLocal + 2
+    Loop
+
+    Call CheckAdditionalConditions
+End Sub
+
+Sub CheckAdditionalConditions
+    Dim SavedRecord As String
+    SavedRecord = RecordContent
+
+    CurrentRecord = Val(Mid$(RecordContent, 44, 4))
+    If CurrentRecord = 0 Then
+        Call ProcessSuccessfulCondition
+        Exit Sub
+    End If
+
+    Call GetRecord
+    Dim RequiredState As String
+    RequiredState = Mid$(RecordContent, 9, 1)
+    RecordContent = SavedRecord
+
+    If Mid$(RecordContent, 48, 1) <> RequiredState Then
+        Call ProcessFailedCondition
+        Exit Sub
+    End If
+
+    If Val(Mid$(RecordContent, 49, 1)) > Rnd * 10 Then
+        Call ProcessFailedCondition
+    Else
+        Call ProcessSuccessfulCondition
+    End If
+End Sub
+
+Sub ProcessSuccessfulCondition
+    CurrentRecord = Val(Mid$(RecordContent, 11, 4))
+    Action = Left$(RecordContent, 5)
+    Call DisplayMessage
+    Call ExecuteAction
+End Sub
+
+Sub ProcessFailedCondition
+    CurrentRecord = Val(Mid$(RecordContent, 15, 4))
+    Action = Mid$(RecordContent, 6, 5)
+    Call DisplayMessage
+    Call ExecuteAction
+End Sub
+
+Sub ProcessBothConditions
+    SecondaryAction = Mid$(RecordContent, 6, 5)
+    Call ProcessSuccessfulCondition
+End Sub
+
+' ----------------------------------------------------------------
+' UTILITY FUNCTIONS FOR ACTION PROCESSING
+' ----------------------------------------------------------------
+Sub ParseItemNumber (ItemString As String)
+    ParsedNumber = Val(ItemString)
+
+    If Right$(ItemString, 1) <> "P" Then Exit Sub
+
+    ' POSSIBLE FIX: original negative encoding looked wrong — preserve legacy but avoid nonsense:
+    ' If string ends with "P", treat as negative index: e.g., "03P" => -3
+    'Dim numOnly As Integer
+    'numOnly = Val(Left$(ItemString, Len(ItemString) - 1))
+    'ParsedNumber = 0 - numOnly
+    ParsedNumber = 0 - 10 * ParsedNumber - (Asc(Right$(ItemString, 1)) And &HF)
+End Sub
+
+Sub FindActionInRecord
+    Call GetRecord
+    Dim SearchIndexLocal As Integer
+    SearchIndexLocal = 34
+
+    Do While SearchIndexLocal < 90
+        If Mid$(RecordContent, SearchIndexLocal, 1) = "E" Then Exit Do
+
+        If Mid$(RecordContent, SearchIndexLocal, 3) = CurCommand Then
+            Action = Mid$(RecordContent, SearchIndexLocal + 3, 5)
+            Exit Sub
+        End If
+
+        If Mid$(RecordContent, SearchIndexLocal + 1, 2) = "??" And Mid$(RecordContent, SearchIndexLocal, 1) = Left$(CurCommand, 1) Then
+            CommandArgs = Right$(CurCommand, 2)
+            Action = Mid$(RecordContent, SearchIndexLocal + 3, 5)
+            Exit Sub
+        End If
+
+        SearchIndexLocal = SearchIndexLocal + 8
+    Loop
+End Sub
+
+Sub ProcessDescription
+    Dim StateValue As Integer
+    StateValue = Val(Mid$(RecordContent, 9, 1))
+    CurrentRecord = Val(Mid$(RecordContent, 6 + 4 * StateValue, 4))
+    Call DisplayMessage
+End Sub
+
+Sub ProcessDynamicMessage
+    If Mid$(Right$(Action, 4), 4, 1) = "0" Then
+        CurrentRecord = GremlinRecord(Val(CommandArgs))
+    Else
+        CurrentRecord = ArtifactRecord(Val(CommandArgs))
+    End If
+
+    Call GetRecord
+    Call ProcessArtifactDescription
+    TextOutput = "The "
+    Call ProcessTextOutput
+End Sub
+
+Sub ProcessArtifactDescription
+    CurrentRecord = Val(Mid$(RecordContent, 6 + 4 * Val(Mid$(RecordContent, 9, 1)), 4))
+End Sub
+
+' ----------------------------------------------------------------
+' ARTIFACT MANIPULATION COMMANDS
+' ----------------------------------------------------------------
+Sub HandleArtifactAction (ArtifactIndex As Integer)
+    If Word1 = "CARR" Then
+        Call HandleCarryArtifact(ArtifactIndex)
+    ElseIf Word1 = "DROP" Then
+        Call HandleDropArtifact(ArtifactIndex)
+    ElseIf Word1 = "THRO" Then
+        Call HandleThrowArtifact(ArtifactIndex)
+    Else
+        Call HandleUseArtifact(ArtifactIndex)
+    End If
+End Sub
+
+Sub HandleSpecificArtifact (ArtifactIndex As Integer)
+    If Word1 = "CARR" Then
+        Call HandleCarryArtifact(ArtifactIndex)
+        Exit Sub
+    End If
+
+    If Word1 = "DROP" Or Word1 = "THRO" Then
+        If ArtifactLocation(ArtifactIndex) <> 0 Then
+            CurrentRecord = 339
+            Call DisplayMessage
+            Exit Sub
+        End If
+
+        CarryCount = CarryCount - 1
+        Call PlaceArtifact(ArtifactIndex)
+
+        If Word1 = "DROP" Then
+            Exit Sub
+        Else
+            CurCommand = "4"
+            Call HandleUseArtifact(ArtifactIndex)
+        End If
+
+        Exit Sub
+    End If
+
+    Call HandleUseArtifact(ArtifactIndex)
+End Sub
+
+Sub HandleCarryArtifact (ArtifactIndex As Integer)
+    CurrentRecord = ArtifactRecord(ArtifactIndex)
+    Call GetRecord
+
+    Dim StateValue As Integer
+    StateValue = Val(Mid$(RecordContent, 9, 1))
+    NewPlace = Val(Mid$(RecordContent, 86, 4))
+
+    If NewPlace <> 0 Then
+        CurrentRecord = NewPlace
+        Call GetRecord
+        Call ExecuteAction
+        Exit Sub
+    End If
+
+    If CarryCount >= 6 Then
+        CurrentRecord = 340
+        Call DisplayMessage
+        Exit Sub
+    End If
+
+    CarryCount = CarryCount + 1
+    ArtifactLocation(ArtifactIndex) = 0 ' 0 means carried by player
+    Call ExecuteCarryAction
+End Sub
+
+Sub HandleDropArtifact (ArtifactIndex As Integer)
+    If ArtifactLocation(ArtifactIndex) <> 0 Then
+        CurrentRecord = 339
+        Call DisplayMessage
+        Exit Sub
+    End If
+
+    CarryCount = CarryCount - 1
+    If CarryCount < 0 Then CarryCount = 0 ' FIX: sanity guard
+    Call PlaceArtifact(ArtifactIndex)
+End Sub
+
+Sub HandleThrowArtifact (ArtifactIndex As Integer)
+    Call HandleDropArtifact(ArtifactIndex)
+    CurCommand = "4"
+    Call HandleUseArtifact(ArtifactIndex)
+End Sub
+
+Sub HandleUseArtifact (ArtifactIndex As Integer)
+    CurrentRecord = ArtifactRecord(ArtifactIndex)
+    Call GetRecord
+
+    CurCommand = "X" ' default no action
+    For ActionIndex = 67 To 75 Step 4
+        If Word1 = Mid$(RecordContent, ActionIndex, 4) Then
+            CurCommand = Right$(Str$((ActionIndex - 63) \ 4), 1)
+            Exit For
+        End If
+    Next ActionIndex
+
+    If CurCommand = "X" Then
+        CurrentRecord = 338
+        Call DisplayMessage
+        Exit Sub
+    End If
+
+    CurCommand = CurCommand + Mid$(Str$(ArtifactIndex \ 100) + "0", 3, 2)
+    Call ExecuteAction
+End Sub
+
+' ----------------------------------------------------------------
+' ACTION EXECUTION IMPLEMENTATIONS
+' ----------------------------------------------------------------
+Sub ExecuteCarryAction
+    ' FIX: secondary action cleared; run any follow-ups via ExecuteAction if present
+    SecondaryAction = "0"
+    ' no direct action following carry unless set earlier
+    Call ExecuteAction
+End Sub
+
+Sub ExecuteComplexAction
+    Dim OperationType As String
+    Dim FlagType As Integer
+    OperationType = Mid$(Action, 3, 1)
+    FlagType = Val(Mid$(Action, 2, 1))
+
+    If Right$(Action, 2) = "??" Then
+        Mid$(Action, 4, 2) = CommandArgs
+    End If
+
+    If OperationType = "0" Then
+        CurrentRecord = CurrentRoom
+        Call ProcessTargetAction
+        Exit Sub
+    End If
+
+    Dim TargetIndex As Integer
+    TargetIndex = Val(Right$(Action, 2))
+
+    If TargetIndex > 0 Then
+        Call ProcessSpecificTarget(TargetIndex, OperationType)
+        Exit Sub
+    End If
+
+    If FlagType = 3 Then
+        Call ProcessRandomTarget(OperationType)
+        Exit Sub
+    End If
+
+    'Call ProcessAllTargets(OperationType, FlagType) ' Unused param
+    Call ProcessAllTargets(OperationType)
+End Sub
+
+Sub ProcessSpecificTarget (TargetIndex As Integer, OperationType As String)
+    If OperationType = "1" Then
+        CurrentRecord = ArtifactRecord(TargetIndex)
+    Else
+        CurrentRecord = GremlinRecord(TargetIndex)
+    End If
+    Call ProcessTargetAction
+End Sub
+
+'Sub ProcessAllTargets (OperationType As String, FlagType As Integer) ' Unused param
+Sub ProcessAllTargets (OperationType As String)
+    FoundTarget = 0
+
+    If OperationType = "1" Then
+        For ArtifactIndex = 1 To NumArtifacts
+            If ArtifactLocation(ArtifactIndex) = 0 Or ArtifactLocation(ArtifactIndex) = CurrentRoom Then
+                Call CheckTargetEligibility(ArtifactIndex)
+                If FoundTarget > 0 Then
+                    CurrentRecord = ArtifactRecord(FoundTarget)
+                    Call ProcessTargetAction
+                    Exit Sub
+                End If
+            End If
+        Next ArtifactIndex
+    Else
+        For GremlinIndex = 1 To NumGremlins
+            If GremlinLocation(GremlinIndex) = CurrentRoom Then
+                Call CheckTargetEligibility(GremlinIndex)
+                If FoundTarget > 0 Then
+                    CurrentRecord = GremlinRecord(FoundTarget)
+                    Call ProcessTargetAction
+                    Exit Sub
+                End If
+            End If
+        Next GremlinIndex
+    End If
+
+    CurrentRecord = 344
+    Call DisplayMessage
+End Sub
+
+Sub ProcessRandomTarget (OperationType As String)
+    Dim RandomIndex As Integer
+
+    If OperationType = "1" Then
+        Do
+            RandomIndex = Int(Rnd * NumArtifacts) + 1
+            If ArtifactLocation(RandomIndex) = 0 Or ArtifactLocation(RandomIndex) = CurrentRoom Then Exit Do
+        Loop
+        CurrentRecord = ArtifactRecord(RandomIndex)
+        Call GetRecord
+        If Mid$(RecordContent, 99, 1) = "1" Then
+            CurrentRecord = 344
+            Call DisplayMessage
+            Exit Sub
+        End If
+    Else
+        Do
+            RandomIndex = Int(Rnd * NumGremlins) + 1
+            If GremlinLocation(RandomIndex) = CurrentRoom Then Exit Do
+        Loop
+        CurrentRecord = GremlinRecord(RandomIndex)
+    End If
+
+    Call ProcessTargetAction
+End Sub
+
+Sub CheckTargetEligibility (Index As Integer)
+    If FoundTarget = 0 Then
+        If Rnd * 10 > 2 Then Exit Sub
+    End If
+    FoundTarget = Index
+End Sub
+
+Sub ProcessTargetAction
+    Call GetRecord
+
+    Dim ActionFlag As Integer
+    ActionFlag = Val(Left$(Action, 1)) - 3
+
+    Select Case ActionFlag
+        Case 0: Call ProcessStateChange
+        Case 1: Call ProcessLocationChange
+        Case 2: Call ProcessLocationChange
+        Case 3: Call ProcessDestroy
+        Case 4: Call ExecuteCarryAction
+        Case 5: Call ExecuteDropAction
+        Case Else
+            ' unknown action flag; default to no-op
+    End Select
+End Sub
+
+Sub ProcessStateChange
+    Dim CurrentState As Integer
+    CurrentState = Val(Mid$(RecordContent, 9, 1))
+
+    If CurrentState = 1 Then
+        Mid$(RecordContent, 9, 1) = "2"
+    Else
+        Mid$(RecordContent, 9, 1) = "1"
+    End If
+
+    Call SaveRecord
+
+    If Mid$(Action, 3, 1) = "0" Then
+        PlayerState = Val(Mid$(RecordContent, 9, 1))
+        PlaceRecord = RecordContent
+    End If
+
+    CurrentRecord = Val(Mid$(RecordContent, 14 + 4 * Val(Mid$(RecordContent, 9, 1)), 4))
+    Call DisplayMessage
+End Sub
+
+Sub ProcessLocationChange
+    NewPlace = Val(Mid$(RecordContent, 93, 4))
+
+    If NewPlace <> CurrentRoom Then
+        NewPlace = WarehouseRoom
+        If NewPlace = CurrentRoom Then NewPlace = 9999
+    End If
+
+    If Mid$(Action, 3, 1) = "1" Then
+        If ArtifactLocation(FoundTarget) = 0 Then CarryCount = CarryCount - 1
+        ArtifactLocation(FoundTarget) = NewPlace
+        CurrentRecord = 346
+        Call ProcessObjectMessage
+    Else
+        GremlinLocation(FoundTarget) = NewPlace
+        If Val(Left$(Action, 1)) = 1 Then
+            CurrentRecord = 346
+            Call ProcessObjectMessage
+        Else
+            CurrentRecord = 347
+            Call ProcessObjectMessage
+        End If
+    End If
+End Sub
+
+Sub ProcessDestroy
+    If Left$(Action, 1) = "9" Then
+        Call DestroyObject
+        Exit Sub
+    End If
+
+    TextOutput = "A "
+    Call ProcessTextOutput
+    Call ProcessArtifactDescription
+    Call ProcessDescription
+    CurrentRecord = 348
+    Call DisplayMessage
+    Call DestroyObject
+End Sub
+
+Sub DestroyObject
+    If Mid$(Action, 3, 1) = "1" Then
+        If ArtifactLocation(FoundTarget) = 0 Then CarryCount = CarryCount - 1
+        Call PlaceArtifact(FoundTarget)
+    Else
+        ' mark gremlin removed
+        GremlinLocation(FoundTarget) = -1
+    End If
+End Sub
+
+' ----------------------------------------------------------------
+' PLAYER DEATH AND REVIVAL
+' ----------------------------------------------------------------
+Sub ExecutePlayerAction
+    Dim LFirst As String
+    LFirst = Left$(Action, 1)
+    If LFirst = "4" Then
+        Call HandlePlayerDeath
+    ElseIf LFirst = "5" Then
+        Call HandlePlayerStateChange
+    ElseIf LFirst = "6" Then
+        Call HandlePlayerMovement
+    ElseIf LFirst = "7" Then
+        Call HandlePlayerCommand
+    ElseIf LFirst = "8" Then
+        Call HandlePlayerStateToggle
+    End If
+End Sub
+
+Sub HandlePlayerDeath
+    Dim DeathMessage As String
+    DeathMessage = Right$(Action, 4)
+    CurrentRecord = Val(DeathMessage)
+    Call DisplayMessage
+
+    CurrentRecord = 345
+    Call DisplayMessage
+    Call FlushOutput
+
+    Print ":";
+    Line Input UserResponse
+
+    UserResponse = Chr$(Asc(Left$(UserResponse, 1)) And &H5F)
+    If UserResponse = "N" Then
+        Call HandleEndCommand
+        Exit Sub
+    End If
+
+    MoveCount = MoveCount + 10
+
+    For ArtifactIndex = 1 To NumArtifacts
+        If ArtifactLocation(ArtifactIndex) = 0 Then
+            Call PlaceArtifact(ArtifactIndex)
+        End If
+    Next ArtifactIndex
+
+    CarryCount = 0
+    CurrentRoom = HomeRoom
+    ActionResult = "Y"
+End Sub
+
+Sub HandlePlayerStateChange
+    PlayerState = 1
+    Mid$(PlaceRecord, 9, 1) = "1"
+    RecordContent = PlaceRecord
+    CurrentRecord = CurrentRoom
+    Call SaveRecord
+    Call ExecuteMoveAction
+End Sub
+
+Sub HandlePlayerMovement
+    Dim ScoreChange As String
+    ScoreChange = Right$(Action, 4)
+    Call ParseItemNumber(ScoreChange)
+    PenaltyPoints = PenaltyPoints + ParsedNumber
+
+    Action = SecondaryAction
+    SecondaryAction = "0"
+    Call ExecuteAction
+End Sub
+
+Sub HandlePlayerCommand
+    CurCommand = Mid$(Action, 2, 3)
+    Call ProcessCommand
+End Sub
+
+Sub HandlePlayerStateToggle
+    CurrentRecord = Val(Right$(Action, 4))
+    Call GetRecord
+
+    Dim CurrentState As Integer
+    CurrentState = Val(Mid$(RecordContent, 9, 1))
+
+    If CurrentState = 1 Then
+        Mid$(RecordContent, 9, 1) = "2"
+    Else
+        Mid$(RecordContent, 9, 1) = "1"
+    End If
+
+    Call SaveRecord
+
+    Action = SecondaryAction
+    SecondaryAction = "0"
+    If Action <> "0" Then Call ExecuteAction
+End Sub
+
+' ----------------------------------------------------------------
+' COMPLEX MOVEMENT AND MULTI-ACTION PROCESSING
+' ----------------------------------------------------------------
+Sub ProcessComplexMovement
+    Dim SavedRecord As String
+    SavedRecord = RecordContent
+
+    For ProcessIndex = 1 To 86 Step 5
+        CurrentRecord = Val(Mid$(SavedRecord, ProcessIndex, 4))
+        If CurrentRecord = 0 Then Exit For
+
+        Call GetRecord
+        Mid$(RecordContent, 9, 1) = Mid$(SavedRecord, ProcessIndex + 4, 1)
+        Call SaveRecord
+    Next ProcessIndex
+
+    Action = Mid$(SavedRecord, 91, 5)
+    Call ExecuteAction
+End Sub
+
+' ----------------------------------------------------------------
+' FEED AND KILL COMMAND PROCESSING
+' ----------------------------------------------------------------
+Sub ProcessFeedKillCommand
+    Dim RequiredItems As String
+    Dim MessageNumber As Integer
+
+    If Left$(Word1, 1) = "F" Then
+        RequiredItems = Mid$(GremlinData, 67, 8)
+        MessageNumber = 354
+    Else
+        RequiredItems = "00" + Mid$(GremlinData, 75, 6)
+        MessageNumber = 351
+    End If
+
+    Dim ItemIndexLocal As Integer
+    ItemIndexLocal = 1
+    Dim FoundItem As Integer
+    FoundItem = 0
+
+    Do While ItemIndexLocal < 7
+        Dim RequiredItem As Integer
+        RequiredItem = Val(Mid$(RequiredItems, ItemIndexLocal, 2))
+
+        If RequiredItem = 0 Then Exit Do
+
+        If ArtifactLocation(RequiredItem) = 0 Then
+            Call ProcessSuccessfulFeedKill(RequiredItem, MessageNumber)
+            FoundItem = 1
+            Exit Do
+        End If
+
+        ItemIndexLocal = ItemIndexLocal + 2
+    Loop
+
+    If FoundItem = 0 Then
+        Call ProcessDescription
+        TextOutput = Word2
+        Call ProcessTextOutput
+
+        If Left$(Word1, 1) = "F" Then
+            CurrentRecord = 341
+            Call DisplayMessage
+        End If
+    End If
+End Sub
+
+Sub ProcessSuccessfulFeedKill (ItemIndexLocal As Integer, MessageNumber As Integer)
+    TextOutput = "The " + Word2
+    Call ProcessTextOutput
+
+    CurrentRecord = MessageNumber + 1
+    Call DisplayMessage
+
+    CurrentRecord = ArtifactRecord(ItemIndexLocal)
+    Call GetRecord
+    Call ProcessDescription
+
+    If Left$(Word1, 1) = "F" Then
+        ArtifactLocation(ItemIndexLocal) = -1
+        GremlinFactor(TargetGremlin) = Val(Mid$(GremlinData, 86, 1))
+    Else
+        GremlinLocation(TargetGremlin) = -1
+    End If
+End Sub
+
+' ----------------------------------------------------------------
+' FILE OPERATIONS AND RECORD MANAGEMENT
+' ----------------------------------------------------------------
+Sub SaveRecord
+    ' Write current record back to file
+    Dim TempRecord As GameRecord
+    TempRecord.DataRecord = RecordContent
+    Put #1, CurrentRecord + 1, TempRecord
+End Sub
+
+Sub PlaceArtifact (ArtifactIndex As Integer)
+    ' Place artifact at appropriate location
+    If Mid$(PlaceRecord, 90, 3) = "***" Then
+        ArtifactLocation(ArtifactIndex) = Val(Mid$(PlaceRecord, 94, 4))
+    Else
+        ArtifactLocation(ArtifactIndex) = CurrentRoom
+    End If
+End Sub
+
+' ----------------------------------------------------------------
+' MESSAGE AND TEXT PROCESSING
+' ----------------------------------------------------------------
+Sub ProcessObjectMessage
+    If Left$(Action, 1) = "9" Then Exit Sub
+    
+    Dim SavedRecord As Integer
+    SavedRecord = CurrentRecord
+    
+    TextOutput = "The "
+    Call ProcessTextOutput
+    Call ProcessArtifactDescription
+    Call ProcessDescription
+    
+    CurrentRecord = SavedRecord
+    Call DisplayMessage
+End Sub
+
+Sub ProcessLocationDescription
+    ' Display current location description
+    Call DisplayMessage
+End Sub
+
+' ----------------------------------------------------------------
+' TEXT PARSING HELPERS
+' ----------------------------------------------------------------
+Sub ParseTextTokens
+    ' Parse text tokens from record - simplified version
+    ' In real implementation, this would parse the complex record format
+    ParsedText1 = Mid$(RecordContent, 1, 40) ' First part of message
+    ParsedText2 = Mid$(RecordContent, 41, 40) ' Second part of message
+    
+    ' Check for continuation marker (simplified)
+    If Right$(RecordContent, 1) = "3" Then
+        TextContinue = "3"
+    Else
+        TextContinue = "1"
+    End If
+End Sub
+
+' ----------------------------------------------------------------
+' MISSING ACTION EXECUTION ROUTINES
+' ----------------------------------------------------------------
+Sub ExecuteDropAction
+    ' Handle dropping artifacts
+    If Mid$(Action, 3, 1) = "1" Then
+        ' Drop artifact
+        If ArtifactLocation(FoundTarget) = 0 Then
+            CarryCount = CarryCount - 1
+        End If
+        Call PlaceArtifact(FoundTarget)
+        CurrentRecord = 346
+        Call DisplayMessage
+    End If
+    
+    ' Continue with secondary action
+    Action = SecondaryAction
+    SecondaryAction = "0"
+    If Action <> "0" Then Call ExecuteAction
+End Sub
+
+Sub ExecuteStateAction
+    ' Handle state changes for objects
+    CurrentRecord = Val(Right$(Action, 4))
+    Call GetRecord
+    
+    Dim CurrentState As Integer
+    CurrentState = Val(Mid$(RecordContent, 9, 1))
+    
+    ' Toggle state between 1 and 2
+    If CurrentState = 1 Then
+        Mid$(RecordContent, 9, 1) = "2"
+    Else
+        Mid$(RecordContent, 9, 1) = "1"
+    End If
+    
+    Call SaveRecord
+    
+    ' Display state change message
+    CurrentRecord = Val(Mid$(RecordContent, 14 + 4 * Val(Mid$(RecordContent, 9, 1)), 4))
+    Call DisplayMessage
+    
+    ' Continue with secondary action
+    Action = SecondaryAction
+    SecondaryAction = "0"
+    If Action <> "0" Then Call ExecuteAction
+End Sub
+
+Sub ExecuteDestroyAction
+    ' Handle destruction of objects
+    If Left$(Action, 1) = "9" Then
+        ' Silent destruction
+        Call DestroyObject
+    Else
+        ' Destruction with message
+        TextOutput = "A "
+        Call ProcessTextOutput
+        Call ProcessArtifactDescription
+        Call ProcessDescription
+        CurrentRecord = 348
+        Call DisplayMessage
+        Call DestroyObject
+    End If
+    
+    ' Continue with secondary action
+    Action = SecondaryAction
+    SecondaryAction = "0"
+    If Action <> "0" Then Call ExecuteAction
+End Sub
+
+' ----------------------------------------------------------------
+' GAME STATE VALIDATION AND DEBUGGING
+' ----------------------------------------------------------------
+Sub ValidateGameState
+    ' Ensure game state is consistent
+    For ArtifactIndex = 1 To NumArtifacts
+        If ArtifactLocation(ArtifactIndex) < -1 Then ' FIX: only allow -1 as removed
+            ArtifactLocation(ArtifactIndex) = CurrentRoom
+        End If
+    Next ArtifactIndex
+    
+    For GremlinIndex = 1 To NumGremlins
+        If GremlinLocation(GremlinIndex) < -1 Then ' FIX: only allow -1 as removed
+            GremlinLocation(GremlinIndex) = -1
+        End If
+    Next GremlinIndex
+    
+    If CarryCount < 0 Then CarryCount = 0
+    If CarryCount > NumArtifacts Then CarryCount = NumArtifacts
+End Sub
+
+Sub DisplayGameStatus
+    ' Debug function to show current game state
+    Print "=== GAME STATUS ==="
+    Print "Current Room: "; CurrentRoom
+    Print "Score: "; Score
+    Print "Moves: "; MoveCount
+    Print "Carrying: "; CarryCount; " items"
+    Print "Player State: "; PlayerState
+    Print
+    
+    Print "Artifacts:"
+    For ArtifactIndex = 1 To NumArtifacts
+        If ArtifactLocation(ArtifactIndex) = 0 Then
+            Print "  Artifact "; ArtifactIndex; " - CARRIED"
+        ElseIf ArtifactLocation(ArtifactIndex) = CurrentRoom Then
+            Print "  Artifact "; ArtifactIndex; " - HERE"
+        End If
+    Next ArtifactIndex
+    
+    Print "Gremlins:"
+    For GremlinIndex = 1 To NumGremlins
+        If GremlinLocation(GremlinIndex) = CurrentRoom Then
+            Print "  Gremlin "; GremlinIndex; " - HERE (Factor: "; GremlinFactor(GremlinIndex); ")"
+        End If
+    Next GremlinIndex
+    
+    Print "=================="
+End Sub
+
+' ----------------------------------------------------------------
+' ERROR HANDLING AND RECOVERY
+' ----------------------------------------------------------------
+Sub HandleError (ErrorMessage As String)
+    Print "ERROR: "; ErrorMessage
+    Print "Game state may be corrupted. Try LOAD to restore."
+    Print "Current room: "; CurrentRoom
+    Print "Record: "; CurrentRecord
+    
+    ' Attempt basic recovery
+    If CurrentRoom <= 0 Or CurrentRoom > 9999 Then
+        CurrentRoom = HomeRoom
+        Print "Reset to home room: "; HomeRoom
+    End If
+    
+    ActionResult = "N"
+End Sub
+
+' ----------------------------------------------------------------
+' PROGRAM TERMINATION
+' ----------------------------------------------------------------
+Sub CleanupAndExit
+    Close #1 ' Close data file
+    Print
+    Print "Thanks for playing!"
+    Print "Final Score: "; Score
+    End
+End Sub

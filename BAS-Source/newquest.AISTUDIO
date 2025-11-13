@@ -1,0 +1,491 @@
+--- START OF FILE Quest.txt ---
+
+' $Debug - (Likely a debugger command or flag for a specific BASIC interpreter)
+
+' --- Data Structures ---
+Type Record
+    datarec As String * 100 ' Data record for game assets/descriptions
+End Type
+
+Dim rec As Record           ' Instance of the Record type
+Dim recordNum As Integer    ' Used to track current record number
+
+' --- Global Variables (Inferred Meanings) ---
+' AL%(): Artifact Locations (0 = carried, SI% = current room, other = other room ID)
+' AR%(): Artifact Record Numbers (points to QDATA.dat)
+' GL%(): Gremlin Locations (SI% = current room, other = other room ID)
+' GR%(): Gremlin Record Numbers (points to QDATA.dat)
+' GF%(): Gremlin Fight/Flee Status or Frequency
+' LL%(): (Unused or specific to a different feature, perhaps room links?)
+' RP%(): Recent Places visited (a stack/history of room IDs)
+
+Dim AL%(60), AR%(60), GL%(40), GR%(40), GF%(40), LL%(5), RP%(5)
+
+' ZZ$ is used as a temporary buffer for reading records from QDATA.dat
+Open "eDATA.dat" For Random As #1 Len = Len(rec)
+Dim ZZ$ As String * 100 ' Ensure ZZ$ matches record length for LSET/GET/PUT
+
+' --- Game State Variables ---
+RN% = 1             ' Random number seed control (or current random number)
+CC% = 0             ' Carry Count (number of items the player is carrying)
+A2$ = "0"           ' Secondary Action string (for deferred actions)
+MV% = 100           ' Move Count (total player actions, used for scoring)
+PN% = 0             ' Penalty/Points (negative points?)
+PN% = 0             ' Penalty/Points (negative points?)
+
+' SI%: Current player location (Room ID)
+' HO%: Home location/starting room
+' WR%: Winning Room (or a special room ID)
+' DK%: Darkness/Default message record ID (if no specific message found)
+' R%: Temporary Record Number (frequently used for data lookups)
+' FG%: Starting Gremlin Record (or initial fear/game over gremlin?)
+' NA%: Number of Artifacts
+' NG%: Number of Gremlins
+' PS%: Player State/Status (e.g., standing, prone, hidden)
+
+' --- Initialization and Data Loading ---
+
+' Line 1: Seed the random number generator
+Randomize (Peek(64)) ' REM TAKE RANDOM SEED FROM REAL TIME CLOCK
+
+' Line 10: INITIALISATION (Comment)
+
+' Load initial game data (player status and room details)
+R% = 0 ' Load Record 0 (likely global game settings)
+GoSub 9010 ' Read record into RC$ (RC$ will hold the current record data)
+SI% = Val(Mid$(RC$, 21, 4)) ' Current Room ID
+HO% = Val(Mid$(RC$, 25, 4)) ' Home Room ID
+WR% = Val(Mid$(RC$, 29, 4)) ' Win Room ID
+DK% = Val(Mid$(RC$, 33, 4)) ' Darkness/Default Message ID
+R% = Val(Mid$(RC$, 11, 4))  ' Some other record ID, perhaps for initial room description
+FG% = Val(Mid$(RC$, 17, 4)) ' Initial Foe/Gremlin Record ID
+NA% = Val(Mid$(RC$, 9, 2))  ' Number of Artifacts
+NG% = Val(Mid$(RC$, 15, 2)) ' Number of Gremlins
+
+' Load Artifact data
+' Loop through artifact records until R% (current record ID) becomes 0
+R% = Val(Left$(RC$, 4)) ' Get next artifact record ID from current RC$
+Do While R% > 0
+    GoSub 9010 ' Load artifact record
+    X% = Val(Mid$(RC$, 91, 2))  ' Artifact Index
+    AL%(X%) = Val(Mid$(RC$, 93, 4)) ' Artifact Location
+    AR%(X%) = R%                    ' Artifact Record Number
+    R% = Val(Left$(RC$, 4))         ' Get next artifact record ID
+Loop
+R% = FG% ' Reset R% to FG% after loading artifacts (maybe for gremlin loading?)
+
+' Load Gremlin data
+' Loop through gremlin records until R% (current record ID) becomes 0
+R% = Val(Left$(RC$, 4)) ' Get next gremlin record ID from current RC$
+Do While R% > 0
+    GoSub 9010 ' Load gremlin record
+    X% = Val(Mid$(RC$, 91, 2))  ' Gremlin Index
+    GL%(X%) = Val(Mid$(RC$, 93, 4)) ' Gremlin Location
+    GR%(X%) = R%                    ' Gremlin Record Number
+    GF%(X%) = Val(Mid$(RC$, 81, 1)) ' Gremlin Fight/Flee Factor
+    R% = Val(Left$(RC$, 4))         ' Get next gremlin record ID
+Loop
+
+AR$ = "N" ' AR$ = "Y" means "player just moved and arrived in a new room"
+GoTo 600  ' Jump to main game loop (Room Arrival handling)
+
+' --- Movement Handling Subroutine (Called when player moves) ---
+' 500-565: Handles movement logic, checks for following gremlins
+500 AR$ = "Y" ' Flag: Player just moved
+S2$ = "The"   ' Default for text construction
+S1$ = "X"     ' Flag for initial state of text construction
+
+' Check if any gremlins are following
+For G% = 1 To NG%
+    If GL%(G%) <> SI% Then GoTo 550 ' Gremlin not in current room
+    R% = GR%(G%): GoSub 9010        ' Load gremlin record
+    ST% = Val(Mid$(RC$, 9, 1))      ' Gremlin status/type
+    ' Check if gremlin flees (random chance based on its status)
+    If Val(Mid$(RC$, 80 + 2 * ST%, 1)) <= Rnd(RN%) * 9 Then GoTo 550
+    ' Gremlin is following, construct message
+    TX$ = S2$: GoSub 9230 ' Add "The" or "%4and" to output buffer
+    If S2$ = "The" Then S1$ = "%4has" Else S1$ = "%4have" ' Set "has"/"have" based on first follower
+    S2$ = "%4and" ' Subsequent followers use "and"
+    GoSub 8010 ' Output gremlin name
+    GL%(G%) = -NP% ' Mark gremlin as following (temporarily negative room ID)
+550 Next G%
+
+SI% = NP% ' Update player's current location to new room (NP% is the destination)
+If S1$ = "X" Then GoTo 600 ' No gremlins followed, skip message
+TX$ = S1$ + " following you. ": GoSub 9230 ' Output message about followers
+AR$ = "N" ' Reset "player moved" flag
+
+' --- Room Arrival and Description ---
+' 600-670: Handles displaying room description and listing items/gremlins
+600 R% = SI%: GoSub 9010 ' Load current room record
+PL$ = RC$              ' Store room record in PL$ (Player Location/Room Data)
+R% = Val(Left$(PL$, 4)) ' Get next room ID (likely for special exits or linked rooms)
+
+' Update recent places visited (RP% array)
+For X% = 1 To 5
+    If SI% = RP%(X%) Then R% = Val(Mid$(PL$, 5, 4)) ' Special handling if returning to a recent place
+    RP%(X% - 1) = RP%(X%) ' Shift history back
+Next X%
+RP%(5) = SI% ' Add current room to history
+GoSub 9120 ' Output room name/description (R% is the text record ID)
+
+PS% = Val(Mid$(PL$, 9, 1)) ' Player State for this room (e.g., dark, lit, special)
+R% = Val(Mid$(PL$, 6 + 4 * PS%, 4)) ' Get text record ID based on player state
+GoSub 9120 ' Output room description specific to player state
+
+OM% = 9999 ' Old Message ID (used to prevent duplicate messages for multiple items/gremlins)
+
+' List present Gremlins
+For G% = 1 To NG%
+    If GL%(G%) = SI% Then ' If gremlin is in current room
+        R% = GR%(G%): GoSub 8100 ' Output gremlin name and description
+    End If
+    If GL%(G%) = -SI% Then GL%(G%) = SI% ' If gremlin was following, now it's just here
+Next G%
+
+' List present Artifacts
+For G% = 1 To NA%
+    If AL%(G%) = SI% Then ' If artifact is in current room
+        R% = AR%(G%): GoSub 8100 ' Output artifact name and description
+    End If
+Next G%
+
+' --- Gremlin Encounter / Random Event Check ---
+700 If AR$ = "Y" Then AR$ = "N": GoTo 900 Else TG% = 0 ' If player just moved, skip random encounter check
+' TG%: Target Gremlin (index of gremlin encountered)
+
+For X% = 1 To NG%
+    If GL%(X%) <> SI% Then GoTo 720 ' Gremlin not in current room
+    GF%(X%) = GF%(X%) + 1 ' Increment gremlin's "patience" or encounter counter
+    If Rnd(RN%) * 10 <= GF%(X%) Then TG% = X%: GF%(X%) = 9 ' If random chance met, this gremlin is encountered
+720 Next X%
+
+If TG% = 0 Then GoTo 900 ' No gremlin encountered
+R% = GR%(TG%): GoSub 9010 ' Load encountered gremlin's record
+GF%(TG%) = Val(Mid$(RC$, 86, 1)) ' Reset gremlin's encounter factor (might be its "mood" for next encounter)
+ST% = Val(Mid$(RC$, 9, 1))       ' Gremlin status/type
+
+R% = Val(Mid$(RC$, 87, 4)) ' Get special action record ID for this encounter
+If R% = 0 Then GoTo 900   ' No special action, proceed to prompt
+
+Y% = Val(Mid$(RC$, 81 + 2 * ST%, 1)) ' Get a value based on gremlin status (e.g., chance to flee, attack power)
+GoSub 9010 ' Load record R% (the special action record)
+AR$ = "Y"  ' Flag: action occurred, force re-display of room description if needed? (unclear here)
+
+If Rnd(RN%) * 9 < Y% Then GoTo 3500 Else GoTo 3600 ' Random check for condition success/fail
+
+' --- Main Game Loop: Prompt and Command Parsing ---
+900 GoSub 9850 ' Ensure output buffer is flushed
+
+910 GoSub 9500 ' Calculate and update score
+Print SC; "  :"; ' Print score and prompt for input
+Line Input CO$  ' Read player command
+RN% = Len(CO$)  ' Use command length as a "random seed" for next Rnd() call (old BASIC trick)
+MV% = MV% + 1   ' Increment move count
+
+920 GoSub 8200 ' Parse first word from CO$ into LW$ (LW$ = "Last Word")
+L1$ = LW$      ' Store first word in L1$
+
+' Pad L1$ to 4 characters or set to "*   " if empty
+If Len(L1$) = 0 Then W1$ = "*   " Else W1$ = Left$(L1$ + "   ", 4)
+
+GoSub 8200 ' Parse second word from CO$ into LW$
+L2$ = LW$      ' Store second word in L2$
+GoSub 8200     ' Clear any remaining words from CO$ if any
+If Len(LW$) > 0 Then GoTo 950 ' If there's a third word, ignore it (or error?)
+
+' Pad L2$ to 4 characters or set to "*   " if empty
+If Len(L2$) = 0 Then W2$ = "*   " Else W2$ = Left$(L2$ + "   ", 4)
+
+' Convert W1$ and W2$ to uppercase for comparison
+For X% = 1 To 4
+    If Mid$(W1$, X%, 1) > "@" Then Mid$(W1$, X%, 1) = Chr$(Asc(Mid$(W1$, X%, 1)) And &H5F)
+    If Mid$(W2$, X%, 1) > "@" Then Mid$(W2$, X%, 1) = Chr$(Asc(Mid$(W2$, X%, 1)) And &H5F)
+Next X%
+
+' --- Special Hardcoded Commands ---
+If W1$ = "SAVE" And W2$ = "*   " Then GoTo 10000 ' Save game
+If W1$ = "LOAD" And W2$ = "*   " Then GoTo 10080 ' Load game
+If W1$ = "ZPQR" Then GoTo 9950 ' Debug/Admin command (teleport, spawn items/gremlins)
+
+' --- Command Lookup and Processing ---
+1000 CO$ = "?" ' CO$ (Command String) will store the internal command code
+AC$ = "?" ' AC$ (Action String) will store the action to perform
+
+' Check for directional commands
+DC$ = "NORTSOUTEASTWESTUP  DOWN" + Mid$(PL$, 26, 8) ' Room specific exits are added
+For X% = 1 To 29 Step 4
+    If W1$ = Mid$(DC$, X%, 4) Then CO$ = "C" + Right$(Str$((X% + 3) / 400), 2) ' C=Command, 01-07 for directions
+Next X%
+If CO$ <> "?" Then GoTo 2000 ' Directional command found, proceed to process
+
+' Check if W1$ is a command relevant to the current room's special exits
+If Mid$(PL$, 26, 4) <> "* KR" Then GoTo 1050 ' If room has no special 'KR' command (likely specific keyword)
+R% = Val(Mid$(PL$, 30, 4)) ' Get special command record ID
+GoSub 8300                 ' Look up command in record R%
+If AC$ <> "?" Then GoTo 3000 ' Action found, execute it
+
+' Check if W1$ is a command relevant to any present gremlins
+G% = NG% ' Start checking from last gremlin
+Do While G% > 0
+    If GL%(G%) <> SI% Then GoTo 1100 ' Gremlin not in current room
+    R% = GR%(G%): GoSub 9010        ' Load gremlin record
+    If Mid$(RC$, 26, 4) <> "* KR" Then GoTo 1100 ' Gremlin has no special 'KR' command
+    R% = Val(Mid$(RC$, 30, 4)) ' Get special command record ID for gremlin
+    GoSub 8300                 ' Look up command in record R%
+    If AC$ <> "?" Then GoTo 3000 ' Action found, execute it
+1100 G% = G% - 1
+Loop
+
+' Check for general action commands (LOOK, INV, FEED, SCORE, END, ATTACK, KILL)
+Y% = 0 ' Y% will hold an index for the ON Y% GOTO statement
+For X% = 1 To 25 Step 4
+    If Mid$("LOOKINVEFEEDSCOREND ATTAKILL", X%, 4) = W1$ Then Y% = (X% + 3) / 4
+Next X%
+G% = 1 ' Reset G% (used for item/gremlin iteration)
+
+' Dispatch based on general command
+On Y% GOTO 1560, 1500, 1410, 1570, 1600, 1400, 1410
+' 1560: LOOK, 1500: INV, 1410: FEED, 1570: SCORE, 1600: END, 1400: ATTACK, 1410: KILL
+
+' --- Item-Specific Command Handling (e.g., CARRY, DROP, THROW) ---
+' 1150-1200: Check if W2$ (the object) matches any carried or present artifact
+' (This section seems to have a logical flaw, as AL%(G%) <> SI% AND AL%(G%) <> 0)
+' It should probably be: If AL%(G%) = 0 OR AL%(G%) = SI% THEN...
+Do While G% <= NA%
+    If AL%(G%) <> SI% And AL%(G%) <> 0 Then GoTo 1190 ' Artifact not in room and not carried by player
+    R% = AR%(G%): GoSub 9010                         ' Load artifact record
+    If Mid$(RC$, 26, 4) <> "* KR" Then GoTo 1180     ' If artifact has no special 'KR' command
+    R% = Val(Mid$(RC$, 30, 4)): GoSub 8300           ' Look up command in artifact record
+    If AC$ = "?" Then GoTo 1190 Else GoTo 3000       ' If action found, execute it
+
+1180    If Mid$(RC$, 26, 4) = W2$ Or Mid$(RC$, 30, 4) = W2$ Then GoTo 1210 ' W2$ matches artifact name/keyword
+1190    G% = G% + 1
+Loop
+
+' If W2$ didn't match any known artifact
+R% = DK%: GoSub 8300 ' Look up command in darkness/default record
+GoTo 3000          ' Execute action (likely an "unknown object" message)
+
+' --- Specific Artifact Actions (CARRY, DROP, THROW) ---
+1210 If W1$ = "CARR" Then GoTo 1330 ' CARRY command
+1220 If W1$ = "DROP" Then GoTo 1300 ' DROP command
+1230 If W1$ = "THRO" Then GoTo 1300 ' THROW command
+
+' Check W1$ against artifact-specific action words in its record
+R% = AR%(G%): GoSub 9010 ' Load artifact record
+CO$ = "X"              ' Default command code if not found
+For X% = 67 To 75 Step 4
+    If W1$ = Mid$(RC$, X%, 4) Then CO$ = Right$(Str$((X% - 63) / 4), 1) ' Get action code (1-3)
+Next X%
+If CO$ = "X" Then R% = 338: GoSub 9120: GoTo 700 ' If no specific action, output "can't do that" message
+
+' Append artifact index to command code
+CO$ = CO$ + Mid$(Str$(G% / 100) + "0", 3, 2) ' Format as "XGG" (X=action, GG=gremlin/artifact index)
+GoTo 2000 ' Process the generated command
+
+' --- DROP / THROW (Artifact) ---
+1300 If AL%(G%) <> 0 Then R% = 339: GoSub 9120: GoTo 700 ' If artifact not carried, error message
+CC% = CC% - 1 ' Decrement carry count
+GoSub 8400    ' Update artifact location (place in current room)
+If W1$ = "DROP" Then GoTo 700 ' If just dropping, end turn
+CO$ = "4"     ' For THROW, set action code to 4 (specific throw action?)
+GoTo 1280     ' Continue with processing throw action
+
+' --- CARRY (Artifact) ---
+1330 R% = AR%(G%): GoSub 9010 ' Load artifact record
+ST% = Val(Mid$(RC$, 9, 1))   ' Artifact status/type (e.g., wieldable, consumable)
+NP% = Val(Mid$(RC$, 86, 4))  ' Special value (e.g., if artifact is a container)
+If NP% <> 0 Then GoTo 3205   ' If it's a special artifact, jump to another handler
+
+If CC% > 6 Then R% = 340: GoSub 9120: GoTo 700 ' If player carrying too much, error message
+CC% = CC% + 1 ' Increment carry count
+AL%(G%) = 0   ' Set artifact location to 0 (carried)
+GoTo 3100     ' Continue processing the action
+
+' --- FEED / KILL / ATTACK Handler ---
+1400 W1$ = "K" ' For ATTACK, treat it like KILL for now (might be a specific setup)
+1410 TG% = 1   ' Target Gremlin index
+
+' Find the gremlin specified by W2$
+Do While TG% <= NG%
+    If GL%(TG%) <> SI% Then GoTo 1450 ' Gremlin not in current room
+    R% = GR%(TG%): GoSub 9010         ' Load gremlin record
+    If W2$ = Mid$(RC$, 26, 4) Then GoTo 1460 ' W2$ matches gremlin short name
+    If W2$ = Mid$(RC$, 30, 4) Then GoTo 1460 ' W2$ matches gremlin full name
+1450    TG% = TG% + 1
+Loop
+
+' If gremlin not found
+R% = 339: GoSub 9120: GoTo 700 ' "Cannot do that" message (or "no such gremlin")
+
+' Gremlin found, construct command code
+1460 CO$ = Left$(W1$, 1) + Mid$(Str$(TG% * 4 / 100) + "0", 3, 2) ' F/K + Gremlin Index (padded)
+KG$ = RC$ ' Store gremlin's record in KG$ (Kill/Gremlin Data)
+GoTo 2000 ' Process the generated command
+
+' --- INVENTORY Command Handler ---
+1500 R% = 342: GoSub 9120 ' Output "You are carrying:" message
+S$ = "%1NOTHING%1"      ' Default message if nothing is carried
+
+For G% = 1 To NA%
+    If AL%(G%) <> 0 Then GoTo 1540 ' If artifact is carried (AL%(G%) = 0)
+    TX$ = "%1A ": GoSub 9200       ' Add "A " to output buffer
+    R% = AR%(G%): GoSub 9010: GoSub 8000 ' Output artifact name/description
+    S$ = " %1"                     ' Reset S$ to clear "NOTHING" for subsequent items
+1540 Next G%
+
+TX$ = S$: GoSub 9230 ' Output the collected inventory string
+GoTo 700 ' End turn
+
+' --- LOOK Command Handler ---
+1560 R% = Val(Left$(PL$, 4)): GoSub 9120 ' Output initial room description
+GoTo 630 ' Jump to room description display (list items/gremlins)
+
+' --- SCORE Command Handler ---
+1570 GoSub 9500 ' Calculate score
+Print "SCORE:"; SC ' Print score
+GoTo 910 ' Go back to main prompt
+
+' --- END Command Handler ---
+1600 GoSub 9500 ' Calculate final score
+Print "SCORE:"; SC ' Print final score
+End ' Terminate program
+
+' --- General Command Dispatcher (After CO$ and AC$ are set) ---
+2000 AC$ = "?"  ' Reset Action String
+RC$ = PL$      ' Use Player Location/Room Data for initial command lookup (room exits)
+
+GoSub 8505     ' Scan current room's record (PL$) for matching CO$ command
+If AC$ <> "?" Then GoTo 3000 ' If action found, execute it
+
+' If no action in room, check gremlins in room for command
+G% = 1
+Do While G% <= NG%
+    If GL%(G%) <> SI% Then GoTo 2060 ' Gremlin not in current room
+    R% = GR%(G%): GoSub 8500        ' Scan gremlin's record for matching CO$ command
+    If AC$ <> "?" Then GoTo 3000    ' If action found, execute it
+2060    G% = G% + 1
+Loop
+
+' If no action in gremlins, check artifacts in room/carried for command
+G% = 1
+Do While G% <= NA%
+    If AL%(G%) <> SI% And AL%(G%) <> 0 Then GoTo 2100 ' Artifact not in room and not carried
+    R% = AR%(G%): GoSub 8500                         ' Scan artifact's record for matching CO$ command
+    If AC$ <> "?" Then GoTo 3000                     ' If action found, execute it
+2100    G% = G% + 1
+Loop
+
+' If command is FEED or KILL, but no specific target was found (this should have been caught earlier)
+If Left$(CO$, 1) = "F" Or Left$(CO$, 1) = "K" Then GoTo 2200 ' Should be handled by 1400-1460, might be a fallback
+
+' If no command found for current context
+R% = 344: GoSub 9120: GoTo 700 ' Output "Cannot do that" message
+
+' --- FEED / KILL Action Processing ---
+' This section processes the `KG$` (Kill/Gremlin Data) obtained earlier
+2200 If Left$(W1$, 1) = "F" Then S$ = Mid$(KG$, 67, 8): M% = 354 Else S$ = "00" + Mid$(KG$, 75, 6): M% = 351
+' If FEED, S$ gets "food" artifact list from KG$, M% = message 354 (Fed)
+' If KILL, S$ gets "weapon" artifact list from KG$, M% = message 351 (Killed)
+
+X% = 1 ' Index for scanning the artifact list in S$
+' Check if player has any of the required artifacts to FEED/KILL
+Do
+    G% = Val(Mid$(S$, X%, 2)) ' Get required artifact ID
+    If G% = 0 Then GoTo 2250  ' End of required artifacts list
+    If AL%(G%) = 0 Then GoTo 2300 ' Player *does not* have the required artifact
+    If X% < 6 Then X% = X% + 2 ' Move to next artifact in list
+Loop While True ' Loop until G% = 0 or a required artifact is missing
+
+' Player has all required artifacts
+2250 GoSub 9110 ' This line seems misplaced or a typo; 9110 is part of 9100. Should be R% = M%
+TX$ = L2$: GoSub 9200 ' Output second word (e.g., gremlin name)
+' If FEED, output "You fed the..."
+If Left$(W1$, 1) = "F" Then R% = 341: GoSub 9120 ' "You fed the..." message
+GoTo 700 ' End turn
+
+' Player is missing a required artifact
+2300 TX$ = "The " + L2$: GoSub 9200 ' Output "The [gremlin/artifact name]"
+R% = M% + 1: GoSub 9120           ' Output error message (e.g., "cannot feed without X")
+R% = AR%(G%): GoSub 9010: GoSub 8000 ' Output name of the missing artifact
+If Left$(W1$, 1) = "F" Then GoTo 2400 ' If FEED, jump to successful feed logic
+
+' Successful KILL (player had weapon)
+GL%(TG%) = -1 ' Mark gremlin as dead/gone
+GoTo 700 ' End turn
+
+' Successful FEED (player had food)
+2400 AL%(G%) = -1 ' Mark artifact (food) as consumed/gone
+GF%(TG%) = Val(Mid$(KG$, 86, 1)) ' Reset gremlin's encounter factor (might make it passive)
+GoTo 700 ' End turn
+
+' --- Action Execution (Based on AC$ code) ---
+3000 X% = Val(Left$(AC$, 1)) + 1 ' Get action type from first digit of AC$
+' Dispatch based on action type
+On X% GOTO 700, 3050, 3200, 5000, 3850, 3870, 4000, 4100, 4200, 5000
+' 700: No-op / End turn
+' 3050: Message Out
+' 3200: Move (NP% = new room)
+' 5000: Further Decode (complex actions like give/take, change status)
+' 3850: Change Player State (PS%)
+' 3870: Change Penalty/Points (PN%)
+' 4000: Kill Player
+' 4100: Custom Command (CO$)
+' 4200: Toggle State (e.g., open/close door)
+' 5000: (Duplicate, likely for specific further decode types)
+
+3020 GoTo 9999 ' Fallback for unknown action (should not happen)
+
+' --- Action: Message Out ---
+3050 M$ = Right$(AC$, 4): GoSub 9100 ' Output message based on M$ (message record ID)
+
+' --- Action: Execute Secondary Action ---
+3100 AC$ = A2$ ' Get deferred action from A2$
+A2$ = "0"     ' Clear A2$
+GoTo 3000     ' Re-enter action execution with new action
+
+' --- Action: Move Player (NP% = New Place) ---
+3200 NP% = Val(Right$(AC$, 4)) ' Get destination room ID from AC$
+3205 R% = NP%: GoSub 9010 ' Load destination room record
+
+' Check room type/conditions for move
+If Right$(RC$, 1) < "6" Then GoTo 500 ' Standard move to a general room
+If Right$(RC$, 1) > "6" Then GoTo 3800 ' Special room type (triggers room-specific events)
+
+' Room has specific entry conditions (PS%, mandatory/forbidden items)
+X% = Val(Mid$(RC$, 19, 1)) ' Get condition type (1-5)
+On X% GOTO 3270, 3270, 3280, 3600, 3700
+' 3270: Check Player State (PS%)
+' 3280: Process mandatory/forbidden lists
+' 3600: Condition fails
+' 3700: Condition succeeds/fails (both have actions)
+
+' Player State check
+3270 If X% <> PS% Then GoTo 3600 ' If current player state doesn't match required state, condition fails
+
+' Process Mandatory/Forbidden Artifact/Gremlin lists
+3280 LV% = 0 ' List Value index (points into RC$ for item lists)
+' Check Mandatory artifacts (N$ = item ID)
+3290 N$ = Mid$(RC$, LV + 20, 2): GoSub 8600 ' Get artifact/gremlin ID, convert "P" suffix
+If N% < 0 Then GoTo 3320  ' N% is a gremlin (negative ID)
+If N% = 0 Then GoTo 3330   ' End of mandatory list
+If AL%(N%) <> 0 Then GoTo 3600 Else GoTo 3330 ' If artifact not carried, condition fails
+' Check Mandatory gremlins
+3320 If GL%(-N%) <> SI% Then GoTo 3600 ' If gremlin not in current room, condition fails
+
+' Check Forbidden artifacts (N$ = item ID)
+3330 N$ = Mid$(RC$, LV + 32, 2): GoSub 8600
+If N% < 0 Then GoTo 3360  ' N% is a gremlin
+If N% = 0 Then GoTo 3370   ' End of forbidden list
+If AL%(N%) = 0 Then GoTo 3600 Else GoTo 3370 ' If artifact *is* carried, condition fails
+' Check Forbidden gremlins
+3360 If GL%(N%) = SI% Then GoTo 3600 ' If gremlin *is* in current room, condition fails
+
+3370 If LV% < 10 Then LV% = LV% + 2: GoTo 3290 ' Continue checking lists (increments by 2 for each list entry)
+
+CR$ = RC$ ' Store current room record (RC$) in CR$ (Current Room)
+R% = Val(Mid$(RC$, 44, 4)) ' Get record ID for additional condition
+If R% = 0 Then GoTo 3410 ' No additional condition
+
+GoSub 9010

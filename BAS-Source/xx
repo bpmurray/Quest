@@ -1,0 +1,11 @@
+char action_result[5];
+    strcpy(action_result, "N");
+    strcpy(action_result, "Y");
+    strcpy(action_result, "Y");
+    strcpy(action_result, "Y");
+        strcpy(action_result, "N");
+        strcpy(action_result, "Y");
+    strcpy(action_result, "N");
+        if (strcmp(action_result, "Y") == 0) {
+        if (strcmp(action_result, "Y") != 0) {
+    strcpy(action_result, "Y");
