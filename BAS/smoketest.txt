@@ -1,0 +1,29 @@
+
+> **Note:** The code assumes your `QDATA.dat` format matches the 100-byte record layout used by the original game. If your data is **0-based** you may need to remove the `+ 1` when calling `GET/PUT` (comment explains where).
+
+## Changes included
+
+- Removed all `GOTO` statements and replaced them with structured logic.
+- **Fixed**: declared `Command` variable (was previously commented).
+- **Fixed**: divide-by-zero guard (`MoveCount` starts at 1; scoring checks for 0).
+- **Fixed**: gremlin "removed" convention standardized to `-1`; following state uses negative room numbers (e.g., `-CurrentRoom`).
+- **Fixed**: carry count can’t go below 0 when dropping/destroying.
+- **Fixed**: `GetRecord` lower-bound guard and comment about 1-based indexing.
+- **Fixed**: secondary-action cleanup (removed no-op assignment).
+- **Safer**: `RecentPlaces` update avoids index 0.
+- **Cosmetic**: text-output/word-extraction rewritten without `GOTO`.
+
+## Quick smoke tests
+
+You can run `quest_smoketest.bas` without `QDATA.dat`. It tests:
+- `ConvertToUppercase`
+- `ExtractWord` tokenization
+- `ProcessTextOutput`/`WrapText`/`FlushOutput` line-wrapping
+
+Open it in QBASIC and run. You should see **PASS** for all cases.
+
+## Tips
+
+- If you need to switch to **0-based** data records, edit `GetRecord` and `SaveRecord` to remove the `+ 1` offset.
+- For fast debugging, use the cheat command: `ZPQR ARTI` (carry all artifacts) or `ZPQR GREM` (remove gremlins).
+
