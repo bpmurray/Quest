@@ -1,0 +1,43 @@
+QUEST ADVENTURE GAME - Test Walkthrough
+======================================
+
+This script demonstrates basic commands and the new ROOM/TP additions.
+
+Commands to Enter (Player Input -> Expected Output)
+--------------------------------------------------
+
+LOOK
+-> "You look around."
+
+INVE
+-> "You check your inventory."
+
+SCORE
+-> "Your score is 0" (or current score value)
+
+ROOM
+-> "Current room ID: <number>"
+
+TP 5
+-> "Teleported to room 5"
+
+ROOM
+-> "Current room ID: 5"
+
+DEBUG ON
+-> "Debug logging ENABLED"
+
+DEBUG STATUS
+-> "Debug logging is currently ON"
+
+DEBUG OFF
+-> "Debug logging DISABLED"
+
+END
+-> "Thanks for playing!" (and exits game)
+
+Notes
+-----
+- Commands must be entered in uppercase or 4-character form (LOOK, INVE, TP <room#>, etc.).
+- The TP command accepts a numeric argument (room ID).
+- Debug commands control log verbosity in game_error.log.
