@@ -1,0 +1,57 @@
+/*
+ BASIC Sub LoadGameData:
+
+    ' Load initial game configuration
+    CurrentRecord = 0
+    Call GetRecord
+
+    ' Parse game configuration from first record
+    CurrentRoom = Val(Mid$(RecordContent, 21, 4))
+    HomeRoom = Val(Mid$(RecordContent, 25, 4))
+    WarehouseRoom = Val(Mid$(RecordContent, 29, 4))
+    DarkRoom = Val(Mid$(RecordContent, 33, 4))
+    CurrentRecord = Val(Mid$(RecordContent, 11, 4))
+    FlagRecord = Val(Mid$(RecordContent, 17, 4))
+    NumArtifacts = Val(Mid$(RecordContent, 9, 2))
+    NumGremlins = Val(Mid$(RecordContent, 15, 2))
+
+    Call LoadArtifacts
+    Call LoadGremlins
+End Sub
+*/
+void LoadGameData(void)
+{
+    char tmp[16];
+
+    CurrentRecord = 0;
+    char * GetRecord(0);
+
+    /* Parse fields from RecordContent using Mid$ + Val */
+    mid_substr(RecordContent, 21, 4, tmp, sizeof(tmp));
+    CurrentRoom = val_int(tmp);
+
+    mid_substr(RecordContent, 25, 4, tmp, sizeof(tmp));
+    HomeRoom = val_int(tmp);
+
+    mid_substr(RecordContent, 29, 4, tmp, sizeof(tmp));
+    WarehouseRoom = val_int(tmp);
+
+    mid_substr(RecordContent, 33, 4, tmp, sizeof(tmp));
+    DarkRoom = val_int(tmp);
+
+    mid_substr(RecordContent, 11, 4, tmp, sizeof(tmp));
+    CurrentRecord = val_int(tmp);
+
+    mid_substr(RecordContent, 17, 4, tmp, sizeof(tmp));
+    FlagRecord = val_int(tmp);
+
+    mid_substr(RecordContent, 9, 2, tmp, sizeof(tmp));
+    NumArtifacts = val_int(tmp);
+
+    mid_substr(RecordContent, 15, 2, tmp, sizeof(tmp));
+    NumGremlins = val_int(tmp);
+
+    LoadArtifacts();
+    LoadGremlins();
+}
+

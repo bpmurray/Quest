@@ -1,0 +1,18 @@
+How to continue the port
+1. Work sub-by-sub
+   Take each Sub Name ... End Sub block from the BASIC file and:
+   * Turn it into void Name(...) { ... } in C.
+   * Replace If ... Then / ElseIf / Else / End If with standard C if / else if / else.
+   * Replace For i = 1 To N loops with for (i = 1; i <= N; i++).
+   * Replace Do ... Loop with while (1) { ... } or a condition-based while.
+2. Use helpers instead of BASIC built-ins
+   * Mid$(s, a, b) → mid_substr(s, a, b, buf, sizeof(buf))
+   * Val(...) → val_int(...)
+   * UCase$, LCase$, etc. → small helper functions (toupper, tolower).
+3. Arrays and indices
+   * BASIC usually uses 1-based indices; keep that convention in C by allocating [N+1] and always looping from 1 to N.
+4. I/O
+   * Print → printf
+   * Input / Line Input → fgets with a buffer, plus newline stripping.
+
+If you’d like, in another message you can say “convert Sub X” and I can translate individual Subs from the BASIC file into C in full detail, step by step.
